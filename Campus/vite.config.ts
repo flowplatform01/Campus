@@ -32,9 +32,19 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: parseInt(process.env.VITE_DEV_PORT || "5173", 10),
+    port: 5000,
     strictPort: true,
-    host: "127.0.0.1",
+    host: "0.0.0.0",
+    proxy: {
+      "/api": {
+        target: "http://0.0.0.0:3001",
+        changeOrigin: true,
+      },
+      "/socket.io": {
+        target: "http://0.0.0.0:3001",
+        ws: true,
+      },
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],
