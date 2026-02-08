@@ -81,7 +81,8 @@ router.post("/register", async (req, res) => {
         password: hashed,
         name: body.name,
         role: body.role,
-        verified: false,
+        verified: true,
+        emailVerifiedAt: new Date(),
         profileCompletion: 20,
         schoolId,
         studentId: body.studentId,
@@ -91,38 +92,24 @@ router.post("/register", async (req, res) => {
       .returning();
     if (!user) throw new Error("Insert failed");
 
-    const token = nanoid(32);
-    await db.insert(emailVerificationTokens).values({
-      userId: user.id,
-      token,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    });
-    let verificationEmailSent = true;
-    try {
-      await sendVerificationEmail(body.email, token, body.name);
-    } catch (err) {
-      verificationEmailSent = false;
-      console.error("[Auth] Verification email send failed:", err);
-      if (config.nodeEnv === "development") {
-        const verifyUrl = `${config.clientUrl}/verify-email?token=${token}`;
-        console.log("[Auth][Dev] Email verification link:", verifyUrl);
-      }
-    }
+    // Skip email verification token in dev for immediate login
+    let verificationEmailSent = false;
 
     const { access, refresh } = createTokens(user.id, user.email, user.role);
-    return res.status(201).json({
-      user: {
+    const userResponse = {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
         profileCompletion: user.profileCompletion,
-        verified: user.verified,
+        verified: !!user.emailVerifiedAt,
         schoolLinked: !!user.schoolId,
         avatar: user.avatarUrl,
         points: user.points,
         badges: user.badges || [],
-      },
+    };
+    return res.status(201).json({
+      user: userResponse,
       accessToken: access,
       refreshToken: refresh,
       expiresIn: 900,
@@ -142,11 +129,11 @@ router.post("/login", async (req, res) => {
     const body = loginSchema.parse(req.body);
     const [user] = await db.select().from(users).where(eq(users.email, body.email)).limit(1);
     if (!user || !(await bcrypt.compare(body.password, user.password))) {
+      console.log(`[Auth] Login failed for ${body.email}: ${!user ? 'User not found' : 'Invalid password'}`);
       return res.status(401).json({ message: "Invalid email or password" });
     }
     const { access, refresh } = createTokens(user.id, user.email, user.role);
-    return res.json({
-      user: {
+    const userResponse = {
         id: user.id,
         email: user.email,
         name: user.name,
@@ -157,7 +144,9 @@ router.post("/login", async (req, res) => {
         avatar: user.avatarUrl,
         points: user.points,
         badges: user.badges || [],
-      },
+    };
+    return res.json({
+      user: userResponse,
       accessToken: access,
       refreshToken: refresh,
       expiresIn: 900,

@@ -12,10 +12,6 @@ author = "agent"
 task = "workflow.run"
 args = "App Server"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Backend Server"
-
 [[workflows.workflow]]
 name = "App Server"
 author = "agent"
@@ -28,24 +24,16 @@ task = "shell.exec"
 args = "npm run dev:client --prefix Campus -- --port 5000 --host 0.0.0.0"
 waitForPort = 5000
 
-[[workflows.workflow]]
-name = "Backend Server"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run dev:server --prefix Campus"
-waitForPort = 3001
-
 [agent]
 expertMode = true
 
 [[ports]]
 localPort = 3001
 externalPort = 3001
+
+[[ports]]
+localPort = 3006
+externalPort = 80
 
 [[ports]]
 localPort = 5000
