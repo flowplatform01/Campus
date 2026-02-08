@@ -11,29 +11,14 @@ Instructions (must be followed strictly):
 
 2. Respect the existing product vision
 This is primarily a School Management System (SMS), not a social app.
-Core actors:
-- School (brand + identity)
-- Admin (school-level authority)
-- Employees (teachers, principals, secretaries, etc. as sub-roles)
-- Students
-- Parents
+Core actors 
+
 
 Social/chat features are SECONDARY and must not block completion of the SMS core.
 
-3. The system MUST be spine-driven
-Every feature must correctly scope to:
-- School
-- Academic Year
-- Term / Session
-- Class
-- Section
-- Subject
-- Enrollment
-- Assigned Employee
 
-If a feature bypasses this spine, flag it and correct it.
 
-4. After reading the codebase, produce:
+3. After reading the codebase, produce: 
 A) A concise but complete audit summary:
    - What is DONE and solid
    - What is PARTIAL / shallow
@@ -49,19 +34,16 @@ B) A prioritized continuation plan (NO redesign):
    5. School profile & branding (logo, school identity, school-post attribution)
    6. Payments (even basic structure if not fully live)
 
-5. Implementation rules
+4. Implementation rules 
 - Continue from the current state only.
 - Do NOT stop mid-task.
 - Finish one module end-to-end before moving to the next.
 - Avoid placeholders unless explicitly marked as future.
 - Assume this will be used by a real school.
 
-6. Permissions & roles
-- Roles are capability-based.
-- “Teacher” is a sub-role of Employee.
-- Enforce permissions consistently across backend + frontend.
 
-7. Autonomy & intelligence
+
+5. Autonomy & intelligence 
 Where appropriate, introduce:
 - sensible defaults
 - automated flows (e.g. current academic year, attendance locking, summaries)
@@ -69,3 +51,5 @@ WITHOUT removing admin control.
 
 Final instruction:
 After analysis, immediately proceed with implementation following the priority list, starting with the most incomplete but critical module. Do not pause unless blocked by missing information; if blocked, clearly state exactly what is missing.
+6.
+ and preview both and separately the backend and frontend. Clean any port using clean anything using their port. So making different, you should be able to be on those ports so communication will be consistent and best. Make sure everything is well previewed and best communication. no issue
