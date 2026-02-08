@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 function getToken(): string | null {
   return localStorage.getItem("campus_access_token");
@@ -8,7 +8,14 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  // Ensure the URL is correctly constructed
+  let url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  
+  // Strip double slashes if they occur at the base (e.g., domain:3001//api/auth)
+  if (API_BASE && path.startsWith("/")) {
+    url = `${API_BASE}${path}`;
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),

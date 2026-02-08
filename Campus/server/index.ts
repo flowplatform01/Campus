@@ -3,7 +3,14 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes/index.js";
 import { setupVite, serveStatic, log } from "./vite";
 
+import cors from "cors";
+
 const app = express();
+
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 
 declare module 'http' {
   interface IncomingMessage {

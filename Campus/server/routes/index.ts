@@ -14,31 +14,8 @@ import { config } from "../config.js";
 import { setupSocket } from "../socket.js";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        // Allow same-origin/server-to-server calls (no Origin header)
-        if (!origin) return callback(null, true);
-
-        const allowList = new Set<string>([
-          config.clientUrl,
-          "http://localhost:5173",
-          "http://127.0.0.1:5173",
-          "http://localhost:5176",
-          "http://127.0.0.1:5176",
-          "http://localhost:5000",
-          "http://127.0.0.1:5000",
-          "http://localhost:3001",
-          "http://127.0.0.1:3001",
-        ]);
-
-        if (allowList.has(origin)) return callback(null, true);
-        return callback(new Error(`CORS blocked for origin: ${origin}`));
-      },
-      credentials: true,
-    })
-  );
-
+  // CORS is handled in the main app (index.ts)
+  
   app.use("/api/auth", authRoutes);
   app.use("/api/social", socialRoutes);
   app.use("/api/academics", academicsRoutes);
