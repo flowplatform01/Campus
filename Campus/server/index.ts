@@ -62,6 +62,7 @@ app.use((req, res, next) => {
   const runServerOnly = process.env.RUN_SERVER_ONLY === "1";
   if (runServerOnly) {
     // API-only mode - no frontend serving
+    console.log(`[Express] Running in API-only mode on port ${port}`);
   } else if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
