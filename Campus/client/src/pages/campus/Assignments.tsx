@@ -66,7 +66,7 @@ export default function CampusAssignmentsPage() {
   const createAssignment = useMutation({
     mutationFn: () =>
       api.sms.assignments.create({
-        academicYearId: activeYear.id,
+        academicYearId: activeYear!.id,
         termId: scope.termId,
         classId: scope.classId,
         sectionId: scope.sectionId || undefined,

@@ -739,7 +739,7 @@ export default function CampusAdminSetupPage() {
                           Load Current
                         </Button>
                         <Button onClick={() => saveGrants.mutate({ subRoleId: selectedSubRoleId, permissionKeys: grantKeys })} disabled={saveGrants.isPending}>Save</Button>
-                        <Button variant="desteSubRole.mutate(selectedSubRoleId)} disabled={deleteSubRole.isPending}>Delete Sub-Role</Button>
+                        <Button variant="destructive" onClick={() => deleteSubRole.mutate(selectedSubRoleId)} disabled={deleteSubRole.isPending}>Delete Sub-Role</Button>
                       </div>
                     </div>
                   </>

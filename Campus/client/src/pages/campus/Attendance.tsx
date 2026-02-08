@@ -44,14 +44,14 @@ export default function CampusAttendancePage() {
 
   const { data: roster, isLoading: isLoadingRoster } = useQuery({
     queryKey: ['sms-attendance-roster', activeYear?.id ?? null, scope.classId || null, scope.sectionId || null],
-    queryFn: () => api.sms.attendance.roster({ academicYearId: activeYear.id, classId: scope.classId, sectionId: scope.sectionId || undefined }),
+    queryFn: () => api.sms.attendance.roster({ academicYearId: activeYear!.id, classId: scope.classId, sectionId: scope.sectionId || undefined }),
     enabled: isStaff && !!activeYear?.id && !!scope.classId,
   });
 
   const createSession = useMutation({
     mutationFn: () =>
       api.sms.attendance.createSession({
-        academicYearId: activeYear.id,
+        academicYearId: activeYear!.id,
         termId: scope.termId,
         classId: scope.classId,
         sectionId: scope.sectionId || undefined,
