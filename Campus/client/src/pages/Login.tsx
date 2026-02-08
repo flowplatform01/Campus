@@ -171,6 +171,32 @@ export default function Login() {
               </Button>
             </form>
 
+            <div className="mt-6 pt-6 border-t border-dashed">
+              <p className="text-xs text-muted-foreground mb-3 text-center uppercase tracking-wider font-semibold">Demo Accounts</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "Admin", email: "admin@campus.demo", pass: "Campus@12345" },
+                  { label: "Teacher", email: "teacher@campus.demo", pass: "Campus@12345" },
+                  { label: "Student", email: "student@campus.demo", pass: "Campus@12345" },
+                  { label: "Parent", email: "parent@campus.demo", pass: "Campus@12345" },
+                ].map((creds) => (
+                  <Button 
+                    key={creds.label}
+                    variant="outline" 
+                    size="sm" 
+                    className="text-[10px] h-7 px-2"
+                    type="button"
+                    onClick={() => {
+                      setEmail(creds.email);
+                      setPassword(creds.pass);
+                    }}
+                  >
+                    {creds.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex flex-col gap-3 mt-4">
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">

@@ -114,7 +114,11 @@ async function main() {
     .where(eq(parentChildren.parentId, parent.id))
     .limit(1);
   if (!existingLink) {
-    await db.insert(parentChildren).values({ parentId: parent.id, childId: student.id });
+    try {
+      await db.insert(parentChildren).values({ parentId: parent.id, childId: student.id });
+    } catch (e) {
+      console.error("Failed to link parent-child:", e);
+    }
   }
 
   let [year] = await db
