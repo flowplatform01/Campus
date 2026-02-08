@@ -1,0 +1,71 @@
+You are acting as a senior full-stack engineer taking over an existing School Management System codebase.
+
+Your FIRST responsibility is to READ and UNDERSTAND the ENTIRE repository before making assumptions.
+
+Instructions (must be followed strictly):
+
+1. Do a full codebase audit
+- Read backend, frontend, database schema, routes, services, UI components.
+- Identify what is fully implemented, partially implemented, placeholder, or missing.
+- Do NOT redesign architecture or rename concepts unless something is objectively broken.
+
+2. Respect the existing product vision
+This is primarily a School Management System (SMS), not a social app.
+Core actors:
+- School (brand + identity)
+- Admin (school-level authority)
+- Employees (teachers, principals, secretaries, etc. as sub-roles)
+- Students
+- Parents
+
+Social/chat features are SECONDARY and must not block completion of the SMS core.
+
+3. The system MUST be spine-driven
+Every feature must correctly scope to:
+- School
+- Academic Year
+- Term / Session
+- Class
+- Section
+- Subject
+- Enrollment
+- Assigned Employee
+
+If a feature bypasses this spine, flag it and correct it.
+
+4. After reading the codebase, produce:
+A) A concise but complete audit summary:
+   - What is DONE and solid
+   - What is PARTIAL / shallow
+   - What is PLACEHOLDER / “coming soon”
+   - What is MISSING but required for a real school system
+
+B) A prioritized continuation plan (NO redesign):
+   Priority order:
+   1. Attendance (authoritative, class-based, lifecycle-driven, not table-only)
+   2. Assignments (finish publish → submit → review → close UI if not complete)
+   3. Dashboards with REAL data (no fake metrics)
+   4. Reports & analytics (attendance, academic, operational)
+   5. School profile & branding (logo, school identity, school-post attribution)
+   6. Payments (even basic structure if not fully live)
+
+5. Implementation rules
+- Continue from the current state only.
+- Do NOT stop mid-task.
+- Finish one module end-to-end before moving to the next.
+- Avoid placeholders unless explicitly marked as future.
+- Assume this will be used by a real school.
+
+6. Permissions & roles
+- Roles are capability-based.
+- “Teacher” is a sub-role of Employee.
+- Enforce permissions consistently across backend + frontend.
+
+7. Autonomy & intelligence
+Where appropriate, introduce:
+- sensible defaults
+- automated flows (e.g. current academic year, attendance locking, summaries)
+WITHOUT removing admin control.
+
+Final instruction:
+After analysis, immediately proceed with implementation following the priority list, starting with the most incomplete but critical module. Do not pause unless blocked by missing information; if blocked, clearly state exactly what is missing.

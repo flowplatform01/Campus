@@ -1,0 +1,80 @@
+Prompt for Building the Campus App Front-End Social Media Features (Client-Side Only, Completing 100% Front-End)
+You are an expert React developer tasked with completing the client-side front-end for “Campus”, a highly advanced, user-friendly and complete school management system (SMS) app with a fully integrated educational social media platform. This builds on the existing MVP front-end (role-based dashboards for School Admin, Student, Parent/Guardian, Employee/Teacher, entry flow, gamification, referrals, and mode switching), now focusing on readjusting the the first entry login/signup(registration) flow,readjusting the manner or way the progressive onboarding or verification or link go about,fully developing the SMS features and fully implementing the social media features to make the front-end 100% complete. Do NOT implement any backend code, server connections, real APIs, or external dependencies that require a server—use dummy data (e.g., local JSON files or in-memory arrays), mock APIs (e.g., via MSW - Mock Service Worker - for simulated async fetches), and localStorage/in-memory state to simulate all interactions, sessions, and data flows. The social features should feel fully functional, smart, modern, unique, interactive, scalable and ready for backend work without reworking
+•  App Description: Campus is an all-in-one, adaptable and highly developed,smart and modern…  platform for schools/academies, combining SMS with an educational social media space.
+1) RBAC and Permissions Simulation: (it’s already done but need to be reviewed and adjusted if not done or completed )
+	•  Core Roles (fixed): School Admin, Student, Parent/Guardian, Employee  .
+	          •  School Admin: Full access and management, can “create ” mock sub-roles via form (simulate saving to localStorage) and assign permissions,Employee Sub-Roles: Simulate customization—defaults: Teacher, Principal, Bursar, Secretary should be fully developed but the School admin can still add or other sub-roles or edit.•  Permissions System: Define a master list of permissions (e.g., viewGrades, manageUsers, postSocial). Each role/sub-role maps to a set of permissions (hard-coded mocks).
+
+2) Entry Flow (Login/Registration/Onboarding): Modern, mature, smart, intelligently handled.  
+•  First Screen (Entry Point): Login screen with clean form (email/password), “Register Now” button, and one-tap social login buttons (Google, Facebook, Apple—simulate clicks: set mock session, redirect). Background image of a vibrant campus. Subtle animation on load.
+•Registration Flow: On click “Register Now”, show role selection: 4 large, icon-based cards/buttons (e.g., Student: backpack icon; Parent: family icon; Employee: briefcase; School Admin: building). 
+On select, show minimal form: Full Name, Email, Password (plus School Name for School Admin). Social login alternatives. Submit: Mock success, set localStorage session, redirect to dashboard or main interface respectively .
+•  Progressive Onboarding: Their Respective Progressive Onboarding or verification or link:ask additional specific details or verification  or link when they first try to use that feature or performance task(if not already done or verified only) Not what is there (I.e not that non-blocking banner/toast that always appears). Hence Balance fast entry with progressive completion 
+3)  Full development of the SMS:
+•fully developing the SMS respective features  let it not more be saying coming soon. Let each be very Modern, mature, smart and intelligently handled and well developed and fully working, each can have a horizontal tabs sub-top Nav scrollable if required for best and smart organization.
+•And equally full developing the settings all working and complete and smartly done and modern
+
+4)  fully development of social Platforms or media:
+
+1. Vision and Goals
+•  Purpose: The social platform is an open,inclusive space within Campus where anyone—students, parents, employees (with sub-roles like Principal,Teacher,…etc), schools, and even governments connect, share ideas, news/updates (e.g., policy announcements), collaborate, post learning content, and discover opportunities (e.g., scholarships, events).
+•It’s a “global educational hub” that’s smart (intuitive search/filters, scheduled posts), modern (clean feeds, media previews), and well-handled (efficient organization, moderation tools).
+•Intelligent Organization: Content categorized and filterable for efficiency (e.g., quick tabs for News vs. Opportunities), with scalable UI (e.g., infinite scroll that loads smoothly).
+•  Modern Feel: Short-form content previews (e.g., video thumbnails), real-time-like updates (mocked), and seamless mode switching.
+•  MVP Scope: Fully interactive social features with mock data (in-memory/JSON). Users can browse, post, engage, and moderate/filter in a simulated way. Scalable for backend (e.g., design for future API swaps). 
+•  Success Metrics: Feed feels dynamic and open;UI scales to 500+ mock posts without issues; ready for backend without front-end changes.
+
+2. Core Social Media Features and what should be implemented or done 
+keep it smart, modern, and well-organized, include these features, all simulated with mock data and having Smooth transitions with page slide animation (e.g., 26+ dummy posts with categories, users from different roles/governments, media). Features are open to all not role locked .
+A) Main Feed: 
+•What: Infinite-scroll timeline of all posts, intelligently sorted (mock: recent first, with filters for trending/hot). content (text, mock images/videos with thumbnails), category tag (News, Resources, etc.), engagement counters (likes, comments), and action buttons.
+•Smart/Modern Handling: Auto-refresh mock (timer-based updates); category tabs for quick navigation; search integration for keywords (e.g., “scholarships”).
+•Unique/Open Aspects: Mixed content from all users. Well-scheduled: Mock “Scheduled Posts” section for future/upcoming events.
+B) Post Creation:
+•  What: Intuitive form (modal or page): Select category (dropdown), add text, upload media (mock dropzone—store as base64), choose visibility (public/school-only/class-only—mock toggle), add tags (e.g., “Math Resource”). Submit updates feed with toast “Post added!”.
+•  Smart/Modern Handling: Character counter, auto-save draft (localStorage), media preview. Unique: Optional “Collaborate” flag (mock: tag for group invites).
+C)Engagement Actions:
+•  What: Like (icon animation), comment (expandable form with mock replies), share (generate mock link/code, copy to clipboard). All update local state (e.g., increment likes).
+•  Smart/Modern Handling: Threaded comments (nested replies); emoji picker for quick reactions. Unique: “Quote Post” button for discussions (mock: create new post with reference).
+D) Explore/Discover:
+•  What: Dedicated tab/page ( on Sub-Top Nav in feeds) with advanced search (keywords, categories, users), filtered lists (e.g., “By School”, “Government Posts”), and suggested sections (mock: “Trending Opportunities”).
+•  Smart/Modern Handling: Client-side filtering (efficient for mocks); pagination if needed. Unique: “Opportunity Board” sub-section for scholarships/events (mock cards with apply buttons—toast “Applied!”). 
+F) Communities:
+•  What: Dedicated tab/page ( on Sub-Top Nav in Chats only visible on social mode) Class groups, school clubs, departments creation/join (mock form: name, description, members).
+• Smart/Modern Handling: Searchable groups; mock member list with roles. Open to cross-school/government  or users collaboration or communication(e.g., “National Education Forum” group).
+G) Chats: 
+•  What: another bottom tab/page (persistent for both Campus and social mode) for Private & group DMs.
+•  should be well developed too
+H)Notifications:
+•What: at core top bar up for school and Social specific alerts (e.g., school (e.g alerts on assignments,exams schedules,events reminders… etc)and social (“New comment on your post”, “Mentioned in discussion”… etc)). List in in notifications, with unread badges.
+•  Smart/Modern Handling: Filter by type (e.g., mentions vs. likes); mark as read or when opened.
+
+3. UI/UX Design Plan
+For a clean, intuitive, scalable experience:
+•  Layout:
+	•  Top Bar: Persistent but add search icon for respective content search 
+	•  Bottom Nav (Addition for Scalability): When switching to Social mode, update bottom bar tabs intelligently: Feed, Chats , Post (central + button for quick create), Connect , Campus  Icons with labels; scalable. Persistent across modes but adapts (i.e replace “Home” with “Feed”, “Chats” with “Chats”(here chats remain persistent), “Academics” with “post”, “settings” with “Connect”, “Campus” with “social”). So organized or structured the bottom tab like this (note I have removed profiles in bottom tab because it’s already in the top bar profile icon when tab)
+	•  Mode Switching: Smooth (Framer Motion slide); Social mode: Full-width content, warmer tones (orange accents), no sidebar
+	•  Sub-Top Nav: Horizontal tabs in Feed ((for you (which is the for you page ),filter (when tab smart drop-dawn showing:News, Discussions, Opportunities,My schoolhub — that when chosen filters by it),then Explore)—sticky for efficiency).
+                 Horizontal tabs too in Chats (my chats,Groups,Community)—sticky for efficiency.
+•  Color Scheme for Social mode: Warmer, inviting (e.g., #fa8c16 accents, #ffffff cards, #f4f4f4 background). Dark mode compatible.
+•  Components:
+	•  Post Card: Compact (avatar, role, content, tags, actions). Media: Thumbnail previews (click to enlarge mock).
+	•  Create Post Modal: Step-by-step (category first, then content)—smart auto-focus on text.
+	•  community Group Page: Card list of groups; inside: Mini-feed with members sidebar (collapsible).
+	•  Skeletons/Errors: Placeholders during mock “loads”; toasts for actions (e.g., “Post shared!”).
+•  Animations: Subtle (e.g., card fade-in on scroll, button hover scale).
+•  Responsive/Scalable: Mobile: Vertical stack, touch-friendly. Desktop: centralized vertical feeds and let the bottom bar be also be in desktop view. Use media queries in Tailwind.
+5. Scalability and Future-Proofing
+•  Code Structure (Build on Existing):
+	•  client/src/components/Social/: PostCard, CreateModal, CommentForm, GroupCard.
+	•  client/src/pages/Social/: Feed, Explore, PostCreate, Groups, Notifications.
+	•  client/src/data-access/social.ts: Mock functions (fetchPosts, createPost—use JSON/in-memory).
+	•  client/src/hooks/useSocialFeed.ts: Infinite scroll logic (React Query).
+	•  client/src/contexts/SocialContext.tsx: State for filters/mode.
+•  Mock Data: 26+ posts in mocks/social.json (varied categories/roles). MSW for /api/social/posts.
+•  Performance: Infinite scroll with react-infinite-scroll-component, memoization (React.memo), query caching. Handle 1k+ mock posts smoothly.
+•  Future Backend: Use interfaces for data (e.g., PostDto in libs/api-contracts/)—easy swap mocks for real fetches.
+
+•	Full  Scope: Include all and complete Ensure app is feels complete/advanced without backend.
+Output: Generate the FULL code for the client app (all files in the structure, including package.json with dependencies). Make it runnable with npm install && npm start. Provide as a structured text (file paths with code blocks). Test manually : Walk through flows for each role,and everything ensuring no missing details. This is the final client front-end—make it excellent!

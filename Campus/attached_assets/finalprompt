@@ -1,0 +1,614 @@
+SCHOOL OPERATIONS BLUEPRINT
+
+(Ground truth for your Campus app)
+
+This blueprint assumes:
+
+Academic structures already exist (years, terms, classes, sections, subjects)
+
+Admin screens already expose many things
+
+User-facing screens are underpowered and under-connected
+
+We are aligning, not rebuilding.
+
+1️⃣ CORE PRINCIPLE (THIS FIXES EVERYTHING)
+
+Your app must follow this rule:
+
+Tables live in the database and admin tooling.
+Users experience workflows, not tables.
+
+So:
+
+Admin → sees structured tables, grids, controls
+
+Staff / Students / Parents → see forms, actions, states, timelines
+
+This alone explains 70% of the “it feels empty” problem.
+
+2️⃣ SCHOOL DATA SPINE (DO NOT BREAK THIS)
+
+Everything must hang from this spine:
+
+School
+ └── Academic Year
+      └── Term
+           └── Class
+                └── Section
+                     ├── Subject
+                     │     └── Assigned Employee (sub-role)
+                     ├── Student Enrollment
+                     └── Timetable Slots
+
+
+If any feature bypasses this → it becomes shallow.
+
+3️⃣ ROLE MODEL (FINAL, NO CONFUSION)
+Main Roles
+
+
+School Admin/School Owner / Director
+
+Employee
+
+Student
+
+Parent
+
+Employee Sub-Roles (not hard-coded, configurable)
+
+Teacher
+
+Principal
+
+Vice Principal
+
+Secretary
+
+Accountant
+
+Librarian
+
+Counselor
+
+IT / Support
+
+Custom roles (school-defined)
+
+Rule:
+Features target capabilities, not names.
+(“Can record attendance”, not “is teacher”.)
+
+4️⃣ MODULE BLUEPRINTS (WHAT EACH MUST BECOME)
+A) Dashboard (Critical Weak Spot)
+
+Dashboard must show real data, not placeholders:
+
+Admin Dashboard:
+
+Total students (current academic year)
+
+Attendance today
+
+Pending admissions
+
+Upcoming exams
+
+Fee collection status
+
+Recent announcements
+
+Employee Dashboard:
+
+Today’s classes
+
+Pending grading
+
+Announcements
+
+Attendance tasks
+
+Student / Parent Dashboard:
+
+Today’s timetable
+
+Assignments due
+
+Attendance summary
+
+Announcements
+
+❌ If dashboard numbers are fake → system feels fake.
+
+B) Schedule (Timetable Engine, not a list)
+
+Admin / Authorized Employee:
+
+Create timetable via guided flow, not table dump:
+
+Select year + term
+
+Select class + section
+
+Define days & time slots
+
+Assign subject + employee + room
+
+Validate conflicts
+
+Publish / lock timetable
+
+Users:
+
+See weekly visual schedule
+
+No editing
+
+Filter by today / week
+
+C) Assignments (Academic Workflow)
+
+Assignment lifecycle:
+
+Draft → Published → Submitted → Reviewed → Closed
+
+
+Creation:
+
+Employee selects class/section/subject
+
+Adds instructions, deadline, max score
+
+Optional file upload
+
+Student:
+
+Upload submission
+
+View status
+
+Employee:
+
+Review
+
+Score
+
+Comment
+
+Parent:
+
+View progress (read-only)
+
+D) Attendance (Daily Authority System)
+
+Attendance is:
+
+Per academic year
+
+Per class / subject
+
+Time-bound
+
+Flow:
+
+Employee opens today’s class
+
+Marks attendance
+
+Submit → locked
+
+Admin can audit/edit (with log)
+
+Parents & students:
+
+View summaries, not raw tables
+
+E) Announcements (Institutional Communication)
+
+Announcements must support:
+
+Targeting:
+
+Entire school
+
+Role-based
+
+Class/section-based
+
+Priority
+
+Optional expiry
+
+Delivery:
+
+In-app
+
+Email (later)
+
+Parent/student:
+
+Read-only
+
+Timestamped
+
+Ordered by relevance
+
+F) Users & Profiles (Missing Depth)
+
+Profiles must support:
+
+Avatar upload (Neon-stored public URL)
+
+School logo upload
+
+Role & sub-role visibility
+
+Status (active, suspended, alumni)
+
+Default avatar is fine — but change must work end-to-end.
+
+G) Files & Media
+
+Store metadata in Neon
+
+Files via Backblaze (private)
+
+Public-facing images (logos, avatars) → Neon URLs
+
+No broken images, no placeholders
+
+5️⃣ ADMIN AREA (WHERE TABLES BELONG)
+
+Admin section is allowed to be:
+
+Table-heavy
+
+Dense
+
+Powerful
+
+But:
+
+Every admin table must power a user-facing experience
+
+No admin-only features that never surface to users
+
+6️⃣ QUALITY CHECKS (NON-NEGOTIABLE)
+
+For every feature, verify:
+
+Can data be created?
+
+Can it be edited?
+
+Is it visible to the correct roles?
+
+Does it survive reload?
+
+Is it scoped to academic year?
+
+Is there a lifecycle/state?
+
+If any answer is “no” → feature is incomplete.
+7)
+(
+(Product + System Architecture)
+
+This is the single source of truth.
+No more guessing. No more “maybe later”.
+
+1. Core Concept (Non-Negotiable)
+
+This app is a School Management System (SMS) like Eskooly, NOT:
+
+a teacher app
+
+a student app
+
+an attendance app
+
+Everything hangs on School → People → Academic Structure → Operations.
+
+
+
+💡 Key rule:
+Teacher is NOT special in code. It’s just an employee with teaching permissions.
+
+3. School Setup Flow (Must Be Sequential in UI)
+
+Admin should NOT see everything at once.
+
+Step 1: School Profile
+
+School name
+
+Logo upload
+
+Motto
+
+Address
+
+Contact info
+
+Default language
+
+Timezone
+
+Academic system type (term/semester)
+
+👉 Without this, dashboard stays “Setup incomplete”.
+
+Step 2: Academic Structure
+
+Academic Years
+
+Academic Terms (linked to year)
+
+Classes / Grades
+
+Sections / Streams
+
+Subjects
+
+UI:
+
+Form-based
+
+Wizard-style
+
+Status indicators (✔ completed / ⚠ missing)
+
+Step 3: People
+
+Employees (with sub-roles)
+
+Students
+
+Parents (linked to students)
+
+4. Feature Domains (No More Mixing)
+
+Each domain has:
+
+DB
+
+API
+
+UI
+
+Permissions
+
+A. Academic Domain
+
+Years
+
+Terms
+
+Classes
+
+Sections
+
+Subjects
+
+Subject ↔ Employee assignment
+
+B. Enrollment Domain
+
+Student admission
+
+Promotion (year → year)
+
+Class transfers
+
+C. Attendance
+
+By class
+
+By subject
+
+By date
+
+Role-restricted (teacher, admin)
+
+D. Assessment & Exams
+
+Test slots
+
+Exam types
+
+Marks entry
+
+Report cards
+
+Visibility control (student/parent)
+
+E. Fees & Finance
+
+Fee structure
+
+Invoices
+
+Payments
+
+Roles: bursar/admin only
+
+F. Communication
+
+Announcements
+
+ Email / In-app notifications
+
+Visibility rules
+
+5. UI RULES (This fixes my biggest pain)
+Admin UI
+
+Tables ✔
+
+Bulk actions ✔
+
+Filters ✔
+
+User UI (Student / Parent / Employee)
+
+Cards
+
+Forms
+
+Timelines
+
+Dashboards
+
+NO raw tables unless unavoidable
+
+6. Dashboard Must Show REAL DATA
+
+Examples:
+
+Admin Dashboard
+
+Total students
+
+Total employees
+
+Active academic year
+
+Attendance today %
+
+Fee collection status
+
+Pending setup steps
+
+Teacher Dashboard
+
+Classes assigned
+
+Attendance pending
+
+Exams to mark
+
+Student Dashboard
+
+Attendance %
+
+Results
+
+Announcements
+
+7. Identity & Media Handling
+
+Default avatar always shown
+
+Custom photo overrides avatar
+
+School logo appears globally
+
+Logo fallback if missing
+
+8. Technical Discipline (To Stop Token Waste)
+
+Rules for development:
+
+No placeholder UI without TODO marker
+
+No new table without UI mapping
+
+No UI without permission mapping
+
+No stop-and-ask unless:
+
+data loss risk
+
+schema breaking change
+
+OPTION B — MASTER PROMPT (Give This to the Dev / AI)
+
+You asked for a single powerful prompt.
+Here it is — copy exactly as is 👇
+
+🔹 MASTER CONTINUATION PROMPT
+
+You are continuing development of a full School Management System (Eskooly-grade), not a demo or starter app.
+
+Core rules:
+
+Treat Teacher as a sub-role of Employee, not a primary role.
+
+Support Admin, Employee (with multiple sub-roles), Student, Parent.
+
+Assume real schools with principals, bursars, secretaries, etc.
+
+Your task:
+
+Audit existing DB schema, APIs, and UI for completeness — not just existence.
+
+Identify shallow or partially implemented features and fully develop them.
+
+Replace table-only UI with proper form-based and card-based flows for end users.
+
+Ensure dashboards show real aggregated data, not placeholders.
+
+Implement school identity features (logo, profile, branding).
+
+Enforce sequential school setup (profile → academic structure → people).
+
+Execution rules:
+
+Make decisions independently using best practices.
+
+Do NOT stop after each step for confirmation.
+
+Batch schema changes, push DB migrations once.
+
+Implement API, UI, and permissions together.
+
+Avoid token waste by continuing logically until a full domain is complete.
+
+The goal is a production-ready SMS foundation, not incremental demos.
+)
+
+ MASTER EXECUTION PROMPT
+
+You are continuing development of an existing School Management System (Campus).
+This is NOT a prototype. This is a production-grade, Eskooly-level system.
+
+IMPORTANT
+- Your task is to COMPLETE, upgrade, CONNECT, and OPERATIONALIZE what exists.
+
+CORE RULE:
+Admin uses tables. Users experience workflows.
+
+PRIMARY GOAL:
+Turn all existing modules (dashboard, schedule, assignments, attendance, announcements, profiles)
+into fully functional, role-aware, lifecycle-driven systems.
+
+
+EXECUTION RULES:
+- Always follow the School Data Spine (Academic Year → Term → Class → Section → Subject).
+- No dummy data.
+- No placeholder logic.
+- No stopping for confirmation unless a system-breaking issue occurs.
+- Push all schema changes.
+- Wire backend to frontend immediately.
+- Test end-to-end after each module.
+
+MODULE PRIORITY ORDER:
+1. Dashboard (real metrics)
+2. Schedule (timetable engine)
+3. Assignments (full lifecycle)
+4. Attendance (daily authoritative record)
+5. Announcements (targeted institutional communication)
+6. Profiles, media, branding (avatars, logos)
+etc
+
+QUALITY BAR:
+If a real school cannot operate daily using the feature, it is incomplete.
+
+FINAL EXPECTATION:
+- school Admin controls thier school system.
+- Employees operate workflows.
+- Students and parents receive meaningful, accurate data.
+- The system feels authoritative, not decorative.
+
+Proceed continuously until the system is fully operational.
