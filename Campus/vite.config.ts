@@ -45,9 +45,6 @@ export default defineConfig({
         ws: true,
       },
     },
-    fs: {
-      strict: true,
-      deny: ["**/.*"],
-    },
+    allowedHosts: true,
   },
 });
