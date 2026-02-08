@@ -60,6 +60,7 @@ app.use((req, res, next) => {
 
   // When RUN_SERVER_ONLY=1 (separate dev: server on 3001, client on 5000), skip Vite/static
   const runServerOnly = process.env.RUN_SERVER_ONLY === "1";
+  const port = config.port;
   if (runServerOnly) {
     // API-only mode - no frontend serving
     console.log(`[Express] Running in API-only mode on port ${port}`);
@@ -73,7 +74,6 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = config.port;
   server.listen({
     port,
     host: "0.0.0.0",
