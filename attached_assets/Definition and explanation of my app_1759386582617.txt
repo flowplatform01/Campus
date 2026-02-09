@@ -1,0 +1,6 @@
+Definition and explanation of my app-platform called Campus and own by my company called Flow
+What is Campus?
+Campus is a powerful, all-in-one app that combines:
+•  Complete School Management: Everything you need to run your school smoothly—manage classes, grades, attendance, fees, and more, with tools that work for any school, from K-12 to academies.
+•  Educational Social Media: A safe, school-focused platform where students, employees and parents etc can share posts, news, updates(e.g., government policies), and resources—like class announcements or study tips—keeping everyone connected and informed, strictly for learning purposes.
+•  User-Friendly Design: Sleek, intuitive, and mobile-ready, so everyone can use it easily, whether on a phone or computer, with a welcoming interface that feels fun and modern.

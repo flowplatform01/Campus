@@ -1,0 +1,160 @@
+CAMPUS PLANNING;
+
+Best Organization and scale:
+Tree;
+
+MyProject/
+├── apps/                                # Main applications
+│   ├── client/                          # User-facing frontend (React, Next.js, etc.)
+│   │   ├── public/
+│   │   ├── src/
+│   │   │   ├── components/
+│   │   │   ├── pages/                   # or routes/ if using React Router
+│   │   │   ├── hooks/
+│   │   │   ├── contexts/
+│   │   │   ├── services/                # API clients, utils
+│   │   │   ├── styles/
+│   │   │   └── main.tsx
+│   │   │── .env
+│   │   └── package.json
+│   │
+│   ├── admin/                           # Admin dashboard frontend (app owners and managers)
+│   │   ├── public/
+│   │   ├── src/
+│   │   │   ├── components/
+│   │   │   ├── pages/
+│   │   │   ├── hooks/
+│   │   │   ├── contexts/
+│   │   │   ├── services/
+│   │   │   ├── styles/
+│   │   │   └── main.tsx
+│   │   │── .env
+│   │   └── package.json
+│   │
+│   └── server/                          # Backend API (Node.js / NestJS / Express)
+│       ├── src/
+│       │   ├── api/
+│       │   │   ├── v1/
+│       │   │   │   ├── auth.routes.ts
+│       │   │   │   ├── user.routes.ts
+│       │   │   │   ├── payments.routes.ts
+│       │   │   │   └── ...
+│       │   │   └── v2/                  # Future-proofing
+│       │   ├── controllers/
+│       │   ├── services/
+│       │   ├── middlewares/
+│       │   ├── models/                  # ORM models (Prisma, Sequelize, etc.)
+│       │   ├── utils/
+│       │   ├── validations/
+│       │   ├── config/                  # App-specific config (not secrets)
+│       │   └── index.ts                 # App entry point
+│       │── .env
+│       └── package.json
+│
+├── database/                            # Database management
+│   ├── migrations/
+│   ├── schemas/
+│   ├── seeds/
+│   └── prisma/
+│       └── schema.prisma
+│
+├── libs/                                # Shared code across apps
+│   ├── constants/
+│   ├── types/
+│   ├── hooks/
+│   ├── api/
+│   └── utils/
+│
+├── docs/                                # Documentation
+│   ├── architecture.md
+│   ├── api-spec.md                      # API contracts
+│   └── setup.md                         # Dev setup guide
+│
+├── tests/                               # Centralized testing
+│   ├── unit/
+│   ├── integration/
+│   └── e2e/
+│
+├── scripts/                             # Automation scripts
+│   ├── deploy.sh
+│   ├── backup.sh
+│   └── setup.sh
+│
+├── ci/                                  # CI/CD pipelines
+│   └── github/
+│       └── workflows/
+│           ├── ci.yml                   # Tests, linting, build
+│           └── deploy.yml               # Deploy scripts
+│
+├── logs/                                # (optional, ignored by git) runtime logs
+├── .gitignore
+├── package.json                         # Root monorepo package.json
+├── turbo.json / nx.json                 # (if using Turborepo or Nx for monorepo)
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
+Arch org :
+1. Frontend (apps/client & apps/admin)
+Client App (React + TypeScript)
+Pages, Components, Data-access layer
+Routes: Social tab (currently placeholder)
+State management: Hooks/Contexts
+Makes API calls to Server
+Admin Dashboard (React + TypeScript, similar to Client)
+Pages for management
+Features: Moderation, Analytics
+Makes API calls to Server
+
+2. Backend (apps/server/src)
+Core Server (Node.js + TypeScript)
+Entry point: index.ts
+Modules: users, academics, payments, communication, media, social (placeholder)
+Controllers: API endpoints (e.g., /posts, /grades)
+Services: Business logic (validation, processing, etc.)
+Entities: Prisma models
+Middlewares: Auth, Rate-limiting
+Utils: Helpers (e.g., WebSockets)
+Validations: Input checks
+Workers
+Background jobs (queues, crons, media processing)
+Webhook handlers (e.g., Stripe events)
+Async tasks via Redis queues
+Configs
+db.config.ts: Neon Postgres connection
+server.config.ts: Ports, env vars
+storage.config.ts: R2 setup
+notifications.config.ts: SendGrid/FCM
+integrations.config.ts: API keys
+
+3. Database & Storage
+Neon Postgres (via Prisma)
+schema.prisma: Models (User, Post, School, etc.)
+Migrations & seeds
+Structured data: metadata, records
+Limits: 0.5 GB free storage, 10 GB egress/month
+Redis
+Caching (feeds, results, timelines as sorted sets)
+Session storage for auth
+Pub/Sub: real-time events (e.g., comments)
+Queues for workers
+Free tier: ~30 MB memory
+Cloudflare R2 (Object Storage)
+Media files: images, videos, documents
+SDK: AWS S3 compatible
+Signed URLs for uploads/downloads
+Free tier: 10 GB, unlimited egress
+
+4. External Integrations (server/src/integrations)
+Stripe (Payments)
+SDK calls from Server
+Webhooks handled by Workers
+Pricing: 2.9% + $0.30 per transaction
+SendGrid / Resend (Emails & Notifications)
+SDK sends from Communication module
+Free tier: 100–3k emails/month
+PostHog (Analytics)
+Tracks client/server events
+Free tier: 1M events/month
+Other Integrations (Google Calendar, FCM, etc.)
+API pulls & webhooks
+Used for scheduling & push notifications
