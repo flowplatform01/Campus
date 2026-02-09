@@ -22,6 +22,12 @@ import {
   smsAttendanceAuditLog,
   smsAttendanceEntries,
   smsAttendanceSessions,
+  smsExams,
+  smsExamMarks,
+  smsExpenses,
+  smsStaffAttendanceEntries,
+  smsStaffAttendanceSessions,
+  smsGradeScales,
   smsFeeHeads,
   smsInvoiceLines,
   smsInvoices,
@@ -511,6 +517,16 @@ router.get("/reports/summary", requireAuth, async (req: AuthRequest, res) => {
         : and(eq(smsAttendanceSessions.schoolId, schoolId), eq(smsAttendanceSessions.status, "locked"))
     );
 
+  const [{ sum: totalExpenses }] = await db
+    .select({ sum: sql<number>`sum(amount)` })
+    .from(smsExpenses)
+    .where(eq(smsExpenses.schoolId, schoolId));
+
+  const [{ count: examsCount }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(smsExams)
+    .where(yearId ? and(eq(smsExams.schoolId, schoolId), eq(smsExams.academicYearId, yearId)) : eq(smsExams.schoolId, schoolId));
+
   return res.json({
     academicYearId: yearId,
     cards: {
@@ -519,6 +535,8 @@ router.get("/reports/summary", requireAuth, async (req: AuthRequest, res) => {
       pendingAdmissions: String(admissionsPending ?? 0),
       assignments: String(assignmentsCount ?? 0),
       attendanceLockedSessions: String(attendanceLockedSessions ?? 0),
+      totalExpenses: String(totalExpenses ?? 0),
+      examsCount: String(examsCount ?? 0),
     },
   });
 });
@@ -2305,6 +2323,202 @@ router.post("/admissions/:id/approve", requireAuth, async (req: AuthRequest, res
     console.error(e);
     return res.status(500).json({ message: "Failed to approve admission" });
   }
+});
+
+// ============ Exams & Marks ============
+
+const examCreateSchema = z.object({
+  academicYearId: z.string().min(1),
+  termId: z.string().min(1),
+  name: z.string().min(1),
+  type: z.enum(["exam", "quiz", "test"]).default("exam"),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+});
+
+router.get("/exams", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = req.user!.schoolId;
+  if (!schoolId) return res.status(400).json({ message: "No school linked" });
+  const rows = await db.select().from(smsExams).where(eq(smsExams.schoolId, schoolId));
+  return res.json(rows);
+});
+
+router.post("/exams", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const body = examCreateSchema.parse(req.body);
+  const [row] = await db.insert(smsExams).values({
+    ...body,
+    schoolId,
+    startDate: body.startDate ? new Date(body.startDate) : null,
+    endDate: body.endDate ? new Date(body.endDate) : null,
+  }).returning();
+  return res.status(201).json(row);
+});
+
+router.get("/exams/:id/marks", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = req.user!.schoolId;
+  if (!schoolId) return res.status(400).json({ message: "No school linked" });
+  const rows = await db.select().from(smsExamMarks).where(eq(smsExamMarks.examId, req.params.id));
+  return res.json(rows);
+});
+
+router.post("/exams/:id/marks", requireAuth, async (req: AuthRequest, res) => {
+  const user = req.user!;
+  if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Forbidden" });
+  const body = z.array(z.object({
+    studentId: z.string().min(1),
+    subjectId: z.string().min(1),
+    marksObtained: z.number().optional(),
+    totalMarks: z.number().min(1),
+    remarks: z.string().optional(),
+  })).parse(req.body);
+
+  const results = [];
+  for (const mark of body) {
+    const [row] = await db.insert(smsExamMarks).values({
+      ...mark,
+      examId: req.params.id,
+      gradedBy: user.id,
+    }).onConflictDoUpdate({
+      target: [smsExamMarks.id], // This might need a unique constraint on (examId, studentId, subjectId)
+      set: { 
+        marksObtained: mark.marksObtained,
+        totalMarks: mark.totalMarks,
+        remarks: mark.remarks,
+        gradedBy: user.id,
+        updatedAt: new Date()
+      }
+    }).returning();
+    results.push(row);
+  }
+  return res.json(results);
+});
+
+// ============ Expenses ============
+
+const expenseCreateSchema = z.object({
+  category: z.string().min(1),
+  title: z.string().min(1),
+  amount: z.number().min(1),
+  date: z.string().datetime().optional(),
+  notes: z.string().optional(),
+});
+
+router.get("/expenses", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = req.user!.schoolId;
+  if (!schoolId) return res.status(400).json({ message: "No school linked" });
+  const rows = await db.select().from(smsExpenses).where(eq(smsExpenses.schoolId, schoolId)).orderBy(desc(smsExpenses.date));
+  return res.json(rows);
+});
+
+router.post("/expenses", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const body = expenseCreateSchema.parse(req.body);
+  const [row] = await db.insert(smsExpenses).values({
+    ...body,
+    schoolId,
+    recordedBy: req.user!.id,
+    date: body.date ? new Date(body.date) : new Date(),
+  }).returning();
+  return res.status(201).json(row);
+});
+
+// ============ Promotions ============
+
+const promoteStudentsSchema = z.object({
+  currentAcademicYearId: z.string().min(1),
+  nextAcademicYearId: z.string().min(1),
+  currentClassId: z.string().min(1),
+  nextClassId: z.string().min(1),
+  studentIds: z.array(z.string().min(1)),
+});
+
+router.post("/students/promote", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const body = promoteStudentsSchema.parse(req.body);
+
+  const results = [];
+  for (const studentId of body.studentIds) {
+    // 1. Mark current enrollment as promoted
+    await db.update(studentEnrollments)
+      .set({ status: "promoted", updatedAt: new Date() })
+      .where(and(
+        eq(studentEnrollments.studentId, studentId),
+        eq(studentEnrollments.academicYearId, body.currentAcademicYearId),
+        eq(studentEnrollments.schoolId, schoolId)
+      ));
+
+    // 2. Create new enrollment for next year
+    const [newEnrollment] = await db.insert(studentEnrollments).values({
+      schoolId,
+      academicYearId: body.nextAcademicYearId,
+      studentId,
+      classId: body.nextClassId,
+      status: "active",
+    }).returning();
+    
+    results.push(newEnrollment);
+  }
+  
+  return res.json({ message: `Successfully promoted ${results.length} students`, enrollments: results });
+});
+
+// ============ Staff Attendance ============
+
+router.get("/staff-attendance/sessions", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const rows = await db.select().from(smsStaffAttendanceSessions).where(eq(smsStaffAttendanceSessions.schoolId, schoolId)).orderBy(desc(smsStaffAttendanceSessions.date));
+  return res.json(rows);
+});
+
+router.post("/staff-attendance/sessions", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const body = z.object({ date: z.string().datetime() }).parse(req.body);
+  
+  const [row] = await db.insert(smsStaffAttendanceSessions).values({
+    schoolId,
+    date: new Date(body.date),
+    markedBy: req.user!.id,
+  }).returning();
+  
+  return res.status(201).json(row);
+});
+
+router.get("/staff-attendance/sessions/:id/entries", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const rows = await db.select().from(smsStaffAttendanceEntries).where(and(eq(smsStaffAttendanceEntries.sessionId, req.params.id), eq(smsStaffAttendanceEntries.schoolId, schoolId)));
+  return res.json(rows);
+});
+
+router.post("/staff-attendance/sessions/:id/entries", requireAuth, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const body = z.array(z.object({
+    staffId: z.string().min(1),
+    status: z.enum(["present", "absent", "late", "excused"]),
+    note: z.string().optional(),
+  })).parse(req.body);
+
+  const results = [];
+  for (const entry of body) {
+    const [row] = await db.insert(smsStaffAttendanceEntries).values({
+      ...entry,
+      sessionId: req.params.id,
+      schoolId,
+      markedBy: req.user!.id,
+    }).onConflictDoUpdate({
+      target: [smsStaffAttendanceEntries.id],
+      set: { status: entry.status, note: entry.note, markedAt: new Date(), markedBy: req.user!.id }
+    }).returning();
+    results.push(row);
+  }
+  return res.json(results);
 });
 
 export default router;

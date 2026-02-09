@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import { MoreHorizontal, IdCard, FileText } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export default function CampusUsersPage() {
   useRequireAuth(['admin']);
@@ -145,6 +147,7 @@ export default function CampusUsersPage() {
                   <TableHead>Sub-role</TableHead>
                   <TableHead>Student ID</TableHead>
                   <TableHead>Employee ID</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -156,6 +159,25 @@ export default function CampusUsersPage() {
                     <TableCell>{u.subRole || '-'}</TableCell>
                     <TableCell>{u.studentId || '-'}</TableCell>
                     <TableCell>{u.employeeId || '-'}</TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => toast({ title: "ID Card Generation", description: `Generating ID Card for ${u.name}` })}>
+                            <IdCard className="mr-2 h-4 w-4" />
+                            ID Card
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => toast({ title: "Certificate Generation", description: `Generating Certificate for ${u.name}` })}>
+                            <FileText className="mr-2 h-4 w-4" />
+                            Certificate
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

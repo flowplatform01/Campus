@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "../db.js";
@@ -50,6 +50,18 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
     );
   } catch (e) {
     return res.status(500).json({ message: "Failed to list users" });
+  }
+});
+
+router.get("/staff", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
+    
+    const rows = await db.select().from(users).where(and(eq(users.schoolId, schoolId), eq(users.role, "employee")));
+    return res.json(rows.map(u => ({ id: u.id, name: u.name, employeeId: u.employeeId, subRole: u.subRole })));
+  } catch (e) {
+    return res.status(500).json({ message: "Failed to list staff" });
   }
 });
 

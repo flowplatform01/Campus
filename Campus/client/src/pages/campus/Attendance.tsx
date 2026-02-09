@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function CampusAttendancePage() {
   const { user } = useRequireAuth();
@@ -100,221 +101,283 @@ export default function CampusAttendancePage() {
     enabled: !isStaff,
   });
 
+  const { data: staff } = useQuery({ queryKey: ['staff'], queryFn: api.users.listStaff, enabled: user?.role === 'admin' });
+  const [staffMarks, setStaffMarks] = useState<Record<string, string>>({});
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Attendance</h1>
-          <p className="text-muted-foreground">View attendance records</p>
+          <p className="text-muted-foreground">Manage and view attendance records</p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{isStaff ? 'Mark Attendance' : 'My Attendance'}</CardTitle>
-            <CardDescription>{isStaff ? 'Create a session, mark, submit, and lock' : 'Locked attendance entries'}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isStaff ? (
-              <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label>Term</Label>
-                    <select
-                      value={scope.termId}
-                      onChange={(e) => setScope({ ...scope, termId: e.target.value })}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="">Select term</option>
-                      {(terms || []).map((t: any) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Date</Label>
-                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Class</Label>
-                    <select
-                      value={scope.classId}
-                      onChange={(e) => {
-                        setScope({ ...scope, classId: e.target.value, sectionId: '' });
-                        setMarks({});
-                        setSession(null);
-                      }}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="">Select class</option>
-                      {(classes || []).map((c: any) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Section (optional)</Label>
-                    <select
-                      value={scope.sectionId}
-                      onChange={(e) => {
-                        setScope({ ...scope, sectionId: e.target.value });
-                        setMarks({});
-                        setSession(null);
-                      }}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="">All / None</option>
-                      {(sections || []).filter((s: any) => !scope.classId || s.classId === scope.classId).map((s: any) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid gap-2 md:col-span-2">
-                    <Label>Subject (optional)</Label>
-                    <select
-                      value={scope.subjectId}
-                      onChange={(e) => {
-                        setScope({ ...scope, subjectId: e.target.value });
-                        setSession(null);
-                      }}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="">(none)</option>
-                      {(subjects || []).map((s: any) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+        <Tabs defaultValue="students">
+          <TabsList>
+            <TabsTrigger value="students">Student Attendance</TabsTrigger>
+            {user?.role === 'admin' && <TabsTrigger value="staff">Staff Attendance</TabsTrigger>}
+          </TabsList>
 
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => createSession.mutate()}
-                    disabled={!activeYear?.id || !scope.termId || !scope.classId || createSession.isPending}
-                  >
-                    Create / Load Session
-                  </Button>
-                  {session && (
-                    <Badge variant={session.status === 'draft' ? 'outline' : session.status === 'submitted' ? 'secondary' : 'default'}>
-                      {session.status}
-                    </Badge>
-                  )}
-                </div>
+          <TabsContent value="students" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>{isStaff ? 'Mark Attendance' : 'My Attendance'}</CardTitle>
+                <CardDescription>{isStaff ? 'Create a session, mark, submit, and lock' : 'Locked attendance entries'}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isStaff ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="grid gap-2">
+                        <Label>Term</Label>
+                        <select
+                          value={scope.termId}
+                          onChange={(e) => setScope({ ...scope, termId: e.target.value })}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">Select term</option>
+                          {(terms || []).map((t: any) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Date</Label>
+                        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Class</Label>
+                        <select
+                          value={scope.classId}
+                          onChange={(e) => {
+                            setScope({ ...scope, classId: e.target.value, sectionId: '' });
+                            setMarks({});
+                            setSession(null);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">Select class</option>
+                          {(classes || []).map((c: any) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Section (optional)</Label>
+                        <select
+                          value={scope.sectionId}
+                          onChange={(e) => {
+                            setScope({ ...scope, sectionId: e.target.value });
+                            setMarks({});
+                            setSession(null);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">All / None</option>
+                          {(sections || []).filter((s: any) => !scope.classId || s.classId === scope.classId).map((s: any) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid gap-2 md:col-span-2">
+                        <Label>Subject (optional)</Label>
+                        <select
+                          value={scope.subjectId}
+                          onChange={(e) => {
+                            setScope({ ...scope, subjectId: e.target.value });
+                            setSession(null);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">(none)</option>
+                          {(subjects || []).map((s: any) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
 
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Student</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Note</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(roster || []).map((r: any) => {
-                      const s = r.student;
-                      const v = marks[s.id]?.status || 'present';
-                      return (
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => createSession.mutate()}
+                        disabled={!activeYear?.id || !scope.termId || !scope.classId || createSession.isPending}
+                      >
+                        Create / Load Session
+                      </Button>
+                      {session && (
+                        <Badge variant={session.status === 'draft' ? 'outline' : session.status === 'submitted' ? 'secondary' : 'default'}>
+                          {session.status}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Student</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Note</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(roster || []).map((r: any) => {
+                          const s = r.student;
+                          const v = marks[s.id]?.status || 'present';
+                          return (
+                            <TableRow key={s.id}>
+                              <TableCell className="font-medium">{s.name}</TableCell>
+                              <TableCell>
+                                <select
+                                  value={v}
+                                  onChange={(e) => setMarks({ ...marks, [s.id]: { status: e.target.value } })}
+                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                  disabled={!session || session.status !== 'draft'}
+                                >
+                                  <option value="present">present</option>
+                                  <option value="late">late</option>
+                                  <option value="absent">absent</option>
+                                  <option value="excused">excused</option>
+                                </select>
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={marks[s.id]?.note || ''}
+                                  onChange={(e) => setMarks({ ...marks, [s.id]: { ...marks[s.id], status: v, note: e.target.value } })}
+                                  placeholder="Add note..."
+                                  disabled={!session || session.status !== 'draft'}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      {(roster || []).length === 0 && !isLoadingRoster && (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">No enrolled students</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => saveEntries.mutate()}
+                        disabled={!session || session.status !== 'draft' || saveEntries.isPending}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        onClick={() => submitSession.mutate()}
+                        disabled={!session || session.status !== 'draft' || submitSession.isPending}
+                      >
+                        Submit
+                      </Button>
+                      {user?.role === 'admin' && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => lockSession.mutate()}
+                          disabled={!session || session.status !== 'submitted' || lockSession.isPending}
+                        >
+                          Lock
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Note</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {((my?.entries || []) as any[]).map((row: any) => (
+                        <TableRow key={row.entry.id}>
+                          <TableCell>{new Date(row.session.date).toLocaleDateString()}</TableCell>
+                          <TableCell>{row.session.subjectId ? subjectNameById[row.session.subjectId] || row.session.subjectId : '—'}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                row.entry.status === 'present'
+                                  ? 'default'
+                                  : row.entry.status === 'late'
+                                  ? 'secondary'
+                                  : row.entry.status === 'excused'
+                                  ? 'outline'
+                                  : 'destructive'
+                              }
+                            >
+                              {row.entry.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{row.entry.note || '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                      {(my?.entries || []).length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">No attendance records yet</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {user?.role === 'admin' && (
+            <TabsContent value="staff" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Staff Attendance</CardTitle>
+                  <CardDescription>Mark attendance for all employees</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-end gap-4">
+                    <div className="grid gap-2">
+                      <Label>Attendance Date</Label>
+                      <Input type="date" defaultValue={new Date().toISOString().split('T')[0]} />
+                    </div>
+                    <Button variant="outline">Initialize Session</Button>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(staff || []).map((s: any) => (
                         <TableRow key={s.id}>
                           <TableCell className="font-medium">{s.name}</TableCell>
+                          <TableCell className="capitalize">{s.subRole}</TableCell>
                           <TableCell>
                             <select
-                              value={v}
-                              onChange={(e) => setMarks({ ...marks, [s.id]: { status: e.target.value } })}
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                              disabled={!session || session.status !== 'draft'}
+                              value={staffMarks[s.id] || 'present'}
+                              onChange={e => setStaffMarks({...staffMarks, [s.id]: e.target.value})}
+                              className="flex h-9 w-32 rounded-md border border-input bg-background px-3 text-sm"
                             >
-                              <option value="present">present</option>
-                              <option value="late">late</option>
-                              <option value="absent">absent</option>
-                              <option value="excused">excused</option>
+                              <option value="present">Present</option>
+                              <option value="absent">Absent</option>
+                              <option value="late">Late</option>
                             </select>
                           </TableCell>
-                          <TableCell>
-                            <Input
-                              value={marks[s.id]?.note || ''}
-                              onChange={(e) => setMarks({ ...marks, [s.id]: { ...marks[s.id], status: v, note: e.target.value } })}
-                              placeholder="Add note..."
-                              disabled={!session || session.status !== 'draft'}
-                            />
-                          </TableCell>
                         </TableRow>
-                      );
-                    })}
-                  {(roster || []).length === 0 && !isLoadingRoster && (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">No enrolled students</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => saveEntries.mutate()}
-                    disabled={!session || session.status !== 'draft' || saveEntries.isPending}
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    onClick={() => submitSession.mutate()}
-                    disabled={!session || session.status !== 'draft' || submitSession.isPending}
-                  >
-                    Submit
-                  </Button>
-                  {user?.role === 'admin' && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => lockSession.mutate()}
-                      disabled={!session || session.status !== 'submitted' || lockSession.isPending}
-                    >
-                      Lock
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Note</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {((my?.entries || []) as any[]).map((row: any) => (
-                    <TableRow key={row.entry.id}>
-                      <TableCell>{new Date(row.session.date).toLocaleDateString()}</TableCell>
-                      <TableCell>{row.session.subjectId ? subjectNameById[row.session.subjectId] || row.session.subjectId : '—'}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            row.entry.status === 'present'
-                              ? 'default'
-                              : row.entry.status === 'late'
-                              ? 'secondary'
-                              : row.entry.status === 'excused'
-                              ? 'outline'
-                              : 'destructive'
-                          }
-                        >
-                          {row.entry.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{row.entry.note || '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                  {(my?.entries || []).length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">No attendance records yet</TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <Button disabled={!staff?.length}>Save Staff Attendance</Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+        </Tabs>
       </div>
     </DashboardLayout>
   );

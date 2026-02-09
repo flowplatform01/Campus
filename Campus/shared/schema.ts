@@ -569,3 +569,78 @@ export type User = typeof users.$inferSelect;
 export type InsertPost = z.infer<typeof insertPostSchema>;
 export type Post = typeof posts.$inferSelect;
 export type School = typeof schools.$inferSelect;
+
+// ============ SMS (Exam Management) ============
+export const smsExams = pgTable("sms_exams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  academicYearId: varchar("academic_year_id").references(() => academicYears.id).notNull(),
+  termId: varchar("term_id").references(() => academicTerms.id).notNull(),
+  name: text("name").notNull(), // e.g. Mid Term, Final Exam
+  type: varchar("type", { length: 30 }).default("exam").notNull(), // exam | quiz | test
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  status: varchar("status", { length: 20 }).default("scheduled").notNull(), // scheduled | ongoing | completed | published
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const smsExamMarks = pgTable("sms_exam_marks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  examId: varchar("exam_id").references(() => smsExams.id).notNull(),
+  studentId: varchar("student_id").references(() => users.id).notNull(),
+  subjectId: varchar("subject_id").references(() => subjects.id).notNull(),
+  marksObtained: integer("marks_obtained"),
+  totalMarks: integer("total_marks").notNull(),
+  remarks: text("remarks"),
+  gradedBy: varchar("graded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const smsGradeScales = pgTable("sms_grade_scales", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  name: text("name").notNull(), // e.g. Primary Grade Scale
+  minPercentage: integer("min_percentage").notNull(),
+  maxPercentage: integer("max_percentage").notNull(),
+  grade: varchar("grade", { length: 10 }).notNull(), // e.g. A+, B, C
+  points: integer("points").default(0),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============ SMS (Expenses Management) ============
+export const smsExpenses = pgTable("sms_expenses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  category: varchar("category", { length: 50 }).notNull(), // salary | utility | maintenance | other
+  title: text("title").notNull(),
+  amount: integer("amount").notNull(),
+  date: timestamp("date").defaultNow().notNull(),
+  notes: text("notes"),
+  recordedBy: varchar("recorded_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============ SMS (Staff Attendance) ============
+export const smsStaffAttendanceSessions = pgTable("sms_staff_attendance_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  date: timestamp("date").notNull(),
+  status: varchar("status", { length: 20 }).default("draft").notNull(),
+  markedBy: varchar("marked_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const smsStaffAttendanceEntries = pgTable("sms_staff_attendance_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => smsStaffAttendanceSessions.id).notNull(),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  staffId: varchar("staff_id").references(() => users.id).notNull(),
+  status: varchar("status", { length: 20 }).notNull(), // present | absent | late | excused
+  note: text("note"),
+  markedAt: timestamp("marked_at").defaultNow().notNull(),
+  markedBy: varchar("marked_by").references(() => users.id).notNull(),
+});

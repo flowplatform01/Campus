@@ -34,6 +34,11 @@ import CampusAnnouncementsPage from "@/pages/campus/Announcements";
 import CampusReportsPage from "@/pages/campus/Reports";
 import CampusResourcesPage from "@/pages/campus/Resources";
 import CampusPaymentsPage from "@/pages/campus/Payments";
+import CampusExamsPage from "@/pages/campus/Exams";
+import CampusExpensesPage from "@/pages/campus/Expenses";
+import CampusStaffAttendancePage from "@/pages/campus/StaffAttendance";
+import CampusPromotionsPage from "@/pages/campus/Promotions";
+import CampusCertificatesPage from "@/pages/campus/Certificates";
 import CampusAdminSetupPage from "@/pages/campus/Admin";
 
 function ProtectedRoute({ component: Component, allowedRoles }: { component: any; allowedRoles?: string[] }) {
@@ -139,6 +144,21 @@ function Router() {
       </Route>
       <Route path="/campus/resources">
         {() => <ProtectedRoute component={CampusResourcesPage} />}
+      </Route>
+      <Route path="/campus/exams">
+        {() => <ProtectedRoute component={CampusExamsPage} />}
+      </Route>
+      <Route path="/campus/expenses">
+        {() => <ProtectedRoute component={CampusExpensesPage} />}
+      </Route>
+      <Route path="/campus/staff-attendance">
+        {() => <ProtectedRoute component={CampusStaffAttendancePage} />}
+      </Route>
+      <Route path="/campus/promotions">
+        {() => <ProtectedRoute component={CampusPromotionsPage} allowedRoles={['admin']} />}
+      </Route>
+      <Route path="/campus/certificates">
+        {() => <ProtectedRoute component={CampusCertificatesPage} />}
       </Route>
       <Route path="/campus/admin">
         {() => <ProtectedRoute component={CampusAdminSetupPage} allowedRoles={['admin']} />}

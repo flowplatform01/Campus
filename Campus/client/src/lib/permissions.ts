@@ -32,7 +32,15 @@ export type Permission =
   | 'manage_sub_roles'
   | 'view_analytics'
   | 'manage_resources'
-  | 'upload_resources';
+  | 'upload_resources'
+  | 'view_exams'
+  | 'manage_exams'
+  | 'view_expenses'
+  | 'manage_expenses'
+  | 'view_staff_attendance'
+  | 'manage_staff_attendance'
+  | 'promote_students'
+  | 'manage_certificates';
 
 export type SubRole = 'teacher' | 'principal' | 'bursar' | 'secretary' | 'librarian' | 'counselor';
 
@@ -76,7 +84,15 @@ export const MASTER_PERMISSIONS: { [key in Permission]: { label: string; descrip
   manage_sub_roles: { label: 'Manage Sub-Roles', description: 'Create and manage employee sub-roles' },
   view_analytics: { label: 'View Analytics', description: 'View analytics and insights' },
   manage_resources: { label: 'Manage Resources', description: 'Manage educational resources' },
-  upload_resources: { label: 'Upload Resources', description: 'Upload educational resources' }
+  upload_resources: { label: 'Upload Resources', description: 'Upload educational resources' },
+  view_exams: { label: 'View Exams', description: 'View examination records' },
+  manage_exams: { label: 'Manage Exams', description: 'Create and manage exams and marks' },
+  view_expenses: { label: 'View Expenses', description: 'View school expenses' },
+  manage_expenses: { label: 'Manage Expenses', description: 'Record and manage school expenses' },
+  view_staff_attendance: { label: 'View Staff Attendance', description: 'View staff attendance records' },
+  manage_staff_attendance: { label: 'Manage Staff Attendance', description: 'Mark and manage staff attendance' },
+  promote_students: { label: 'Promote Students', description: 'Manage student promotions to next class' },
+  manage_certificates: { label: 'Manage Certificates', description: 'Generate ID cards and certificates' }
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
@@ -113,7 +129,15 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'manage_sub_roles',
     'view_analytics',
     'manage_resources',
-    'upload_resources'
+    'upload_resources',
+    'view_exams',
+    'manage_exams',
+    'view_expenses',
+    'manage_expenses',
+    'view_staff_attendance',
+    'manage_staff_attendance',
+    'promote_students',
+    'manage_certificates'
   ],
   student: [
     'view_dashboard',
@@ -124,7 +148,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'submit_assignments',
     'view_social_feed',
     'post_social',
-    'view_announcements'
+    'view_announcements',
+    'view_exams'
   ],
   parent: [
     'view_dashboard',
@@ -135,7 +160,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'view_payments',
     'view_social_feed',
     'post_social',
-    'view_announcements'
+    'view_announcements',
+    'view_exams'
   ]
 };
 
@@ -156,7 +182,9 @@ export const SUB_ROLE_PERMISSIONS: Record<SubRole, Permission[]> = {
     'send_announcements',
     'manage_classes',
     'view_student_profiles',
-    'upload_resources'
+    'upload_resources',
+    'view_exams',
+    'manage_exams'
   ],
   principal: [
     'view_dashboard',
@@ -187,7 +215,14 @@ export const SUB_ROLE_PERMISSIONS: Record<SubRole, Permission[]> = {
     'view_parent_info',
     'view_analytics',
     'manage_resources',
-    'upload_resources'
+    'upload_resources',
+    'view_exams',
+    'manage_exams',
+    'view_expenses',
+    'view_staff_attendance',
+    'manage_staff_attendance',
+    'promote_students',
+    'manage_certificates'
   ],
   bursar: [
     'view_dashboard',
@@ -198,7 +233,9 @@ export const SUB_ROLE_PERMISSIONS: Record<SubRole, Permission[]> = {
     'generate_reports',
     'view_student_profiles',
     'view_parent_info',
-    'view_announcements'
+    'view_announcements',
+    'view_expenses',
+    'manage_expenses'
   ],
   secretary: [
     'view_dashboard',

@@ -8,7 +8,8 @@ import {
   Home, Users, BookOpen, Calendar, MessageSquare, Settings,
   BarChart3, DollarSign, Shield, Trophy, ClipboardList,
   Bell, FileText, GraduationCap, Briefcase, Globe,
-  LayoutDashboard, UserCog, Megaphone, PieChart
+  LayoutDashboard, UserCog, Megaphone, PieChart,
+  FileSpreadsheet, Receipt, UserCheck, TrendingUp
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 import { Permission } from '@/lib/permissions';
@@ -47,10 +48,22 @@ export function DynamicSidebar() {
       permission: 'view_grades'
     },
     { 
+      icon: FileSpreadsheet, 
+      label: 'Exams', 
+      path: '/campus/exams',
+      permission: 'view_exams'
+    },
+    { 
       icon: ClipboardList, 
       label: 'Attendance', 
       path: '/campus/attendance',
       permission: 'view_attendance'
+    },
+    { 
+      icon: UserCheck, 
+      label: 'Staff Attendance', 
+      path: '/campus/staff-attendance',
+      permission: 'view_staff_attendance'
     },
     { 
       icon: BookOpen, 
@@ -65,10 +78,22 @@ export function DynamicSidebar() {
       permission: 'view_schedule'
     },
     { 
+      icon: TrendingUp, 
+      label: 'Promotions', 
+      path: '/campus/promotions',
+      permission: 'promote_students'
+    },
+    { 
       icon: DollarSign, 
       label: 'Payments', 
       path: '/campus/payments',
       permission: 'view_payments'
+    },
+    { 
+      icon: Receipt, 
+      label: 'Expenses', 
+      path: '/campus/expenses',
+      permission: 'view_expenses'
     },
     { 
       icon: Megaphone, 
@@ -87,6 +112,12 @@ export function DynamicSidebar() {
       label: 'Resources', 
       path: '/campus/resources',
       permission: 'manage_resources'
+    },
+    { 
+      icon: FileText, 
+      label: 'Certificates', 
+      path: '/campus/certificates',
+      permission: 'manage_certificates'
     },
     { 
       icon: Shield, 

@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
-import { Users, GraduationCap, DollarSign, TrendingUp } from 'lucide-react';
+import { Users, GraduationCap, DollarSign, TrendingUp, Wallet, ClipboardCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -43,6 +43,20 @@ export default function AdminDashboard() {
       icon: DollarSign,
       change: '',
       color: 'from-purple-500 to-pink-500'
+    },
+    {
+      title: 'Total Expenses',
+      value: data?.cards?.totalExpenses !== undefined ? `$${data.cards.totalExpenses}` : '—',
+      icon: Wallet,
+      change: '',
+      color: 'from-red-500 to-rose-500'
+    },
+    {
+      title: 'Active Exams',
+      value: String(data?.cards?.examsCount ?? 0),
+      icon: ClipboardCheck,
+      change: '',
+      color: 'from-indigo-500 to-blue-500'
     }
   ];
 

@@ -166,6 +166,7 @@ export const api = {
   users: {
     getById: async (id: string) => request<ApiUser>(`/api/users/${id}`),
     list: async () => request<any[]>("/api/users"),
+    listStaff: async () => request<any[]>("/api/users/staff"),
     create: async (data: {
       email: string;
       password: string;
@@ -280,6 +281,35 @@ export const api = {
       listSubmissions: async (assignmentId: string) => request<any[]>(`/api/sms/assignments/${assignmentId}/submissions`),
       review: async (submissionId: string, data: { score: number; feedback?: string }) =>
         request<any>(`/api/sms/assignments/submissions/${submissionId}/review`, { method: "POST", body: JSON.stringify(data) }),
+    },
+    exams: {
+      list: async () => request<any[]>("/api/sms/exams"),
+      create: async (data: { academicYearId: string; termId: string; name: string; type: string; startDate?: string; endDate?: string }) =>
+        request<any>("/api/sms/exams", { method: "POST", body: JSON.stringify(data) }),
+      getMarks: async (examId: string) => request<any[]>(`/api/sms/exams/${examId}/marks`),
+      saveMarks: async (examId: string, marks: Array<{ studentId: string; subjectId: string; marksObtained?: number; totalMarks: number; remarks?: string }>) =>
+        request<any[]>(`/api/sms/exams/${examId}/marks`, { method: "POST", body: JSON.stringify(marks) }),
+    },
+    expenses: {
+      list: async () => request<any[]>("/api/sms/expenses"),
+      create: async (data: { category: string; title: string; amount: number; date?: string; notes?: string }) =>
+        request<any>("/api/sms/expenses", { method: "POST", body: JSON.stringify(data) }),
+    },
+    promotions: {
+      promote: async (data: {
+        currentAcademicYearId: string;
+        nextAcademicYearId: string;
+        currentClassId: string;
+        nextClassId: string;
+        studentIds: string[];
+      }) => request<any>("/api/sms/students/promote", { method: "POST", body: JSON.stringify(data) }),
+    },
+    staffAttendance: {
+      listSessions: async () => request<any[]>("/api/sms/staff-attendance/sessions"),
+      createSession: async (date: string) => request<any>("/api/sms/staff-attendance/sessions", { method: "POST", body: JSON.stringify({ date }) }),
+      listEntries: async (sessionId: string) => request<any[]>(`/api/sms/staff-attendance/sessions/${sessionId}/entries`),
+      saveEntries: async (sessionId: string, entries: Array<{ staffId: string; status: string; note?: string }>) =>
+        request<any[]>(`/api/sms/staff-attendance/sessions/${sessionId}/entries`, { method: "POST", body: JSON.stringify(entries) }),
     },
     timetable: {
       week: async (params?: { academicYearId?: string; termId?: string; classId?: string; sectionId?: string }) => {
