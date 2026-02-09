@@ -114,12 +114,6 @@ export function DynamicSidebar() {
       permission: 'manage_resources'
     },
     { 
-      icon: FileText, 
-      label: 'Certificates', 
-      path: '/campus/certificates',
-      permission: 'manage_certificates'
-    },
-    { 
       icon: Shield, 
       label: 'Admin', 
       path: '/campus/admin',
