@@ -56,3 +56,4 @@ Do not stop halfway
 Do not rewrite working code
 fiil gaps
 Be precise, calm, and technical
+when done dont sync to my github
