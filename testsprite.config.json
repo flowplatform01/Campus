@@ -1,0 +1,59 @@
+{
+  "apiKey": "sk-user-QuXhtp5R_-afL0bJPJYzA-vj-NtU4cD-keuc86oVb0nStQ7NEZB-lmlXuh20BeC88P8sANxPUXdlAn4Ou7KabJyYTSw6y6NukatKQ4Ps1rLySoFiC7jwZMGnDzvjUmxwICk",
+  "baseUrl": "https://api.testsprite.ai",
+  "project": {
+    "name": "Campus School Management System",
+    "type": "fullstack",
+    "framework": "react-express"
+  },
+  "endpoints": {
+    "backend": "http://localhost:3006",
+    "frontend": "http://localhost:5173"
+  },
+  "testSuites": [
+    {
+      "name": "Authentication Tests",
+      "type": "api",
+      "endpoints": [
+        "/api/auth/register",
+        "/api/auth/login",
+        "/api/auth/refresh"
+      ]
+    },
+    {
+      "name": "Academic Management Tests", 
+      "type": "api",
+      "endpoints": [
+        "/api/academics/grades",
+        "/api/academics/assignments",
+        "/api/academics/attendance",
+        "/api/academics/schedule"
+      ]
+    },
+    {
+      "name": "File Upload Tests",
+      "type": "api", 
+      "endpoints": [
+        "/api/upload/assignment",
+        "/api/upload/profile"
+      ]
+    },
+    {
+      "name": "Health Check Tests",
+      "type": "api",
+      "endpoints": [
+        "/api/health",
+        "/api/analytics/health"
+      ]
+    }
+  ],
+  "testData": {
+    "testUser": {
+      "email": "test@campus.com",
+      "password": "test123456",
+      "name": "Test User",
+      "role": "admin",
+      "schoolName": "Test School"
+    }
+  }
+}

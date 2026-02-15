@@ -5,6 +5,8 @@ import { api } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useMemo, useState } from 'react';
@@ -27,14 +29,14 @@ export default function CampusPromotionsPage() {
       .sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0] || null;
   }, [years, activeYear]);
 
-  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
-  const { data: sections } = useQuery({ queryKey: ['sms-sections'], queryFn: api.sms.sections.list });
-
   const [scope, setScope] = useState({ 
     currentClassId: '', 
     currentSectionId: '',
     nextClassId: '' 
   });
+
+  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
+  const { data: sections } = useQuery({ queryKey: ['sms-sections', scope.currentClassId], queryFn: () => api.sms.sections.list(scope.currentClassId || undefined) });
 
   const { data: students, isLoading: isLoadingStudents } = useQuery({
     queryKey: ['sms-promotion-students', activeYear?.id, scope.currentClassId, scope.currentSectionId],

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { Calendar, Clock, BookOpen, Users, Plus, Trash2, Database, Edit, ListChecks } from 'lucide-react';
 
 export default function CampusSchedulePage() {
   const { user } = useRequireAuth();
@@ -23,7 +24,7 @@ export default function CampusSchedulePage() {
     enabled: !!activeYear?.id,
   });
   const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
-  const { data: sections } = useQuery({ queryKey: ['sms-sections'], queryFn: api.sms.sections.list });
+  const { data: sections } = useQuery({ queryKey: ['sms-sections'], queryFn: () => api.sms.sections.list() });
   const { data: subjects } = useQuery({ queryKey: ['sms-subjects'], queryFn: api.sms.subjects.list });
   const { data: employees } = useQuery({ queryKey: ['users'], queryFn: api.users.list });
 
@@ -87,16 +88,26 @@ export default function CampusSchedulePage() {
     onError: (e: any) => toast({ title: 'Failed to publish', description: e?.message || 'Error', variant: 'destructive' }),
   });
 
+  // Sample data creation mutations
+  const createSampleTimetable = useMutation({
+    mutationFn: () => api.sms.timetable.createSampleData(),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['sms-timetable-week'] });
+      toast({ title: 'Sample timetable created', description: 'Sample timetable records have been added successfully.' });
+    },
+    onError: (e: any) => toast({ title: 'Failed to create sample data', description: e?.message || 'Error', variant: 'destructive' }),
+  });
+
   const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const slotsByDay = useMemo(() => {
     const map: Record<string, any[]> = {};
     for (const d of days) map[d] = [];
     for (const s of week?.slots || []) {
       map[s.weekday] = map[s.weekday] || [];
-      map[s.weekday].push(s);
+      (map[s.weekday] ??= []).push(s);
     }
     for (const d of days) {
-      map[d].sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      (map[d] ?? []).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
     }
     return map;
   }, [week]);
@@ -108,6 +119,38 @@ export default function CampusSchedulePage() {
           <h1 className="text-3xl font-bold">Schedule</h1>
           <p className="text-muted-foreground">Class timetable</p>
         </div>
+
+        {user?.role === 'admin' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+              <CardDescription>System management</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start gap-2" 
+                onClick={() => createSampleTimetable.mutate()}
+                disabled={createSampleTimetable.isPending}
+              >
+                <Database className="w-4 h-4" />
+                {createSampleTimetable.isPending ? 'Creating...' : 'Create Sample Timetable'}
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" disabled>
+                <Calendar className="w-4 h-4" />
+                View Calendar
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" disabled>
+                <Edit className="w-4 h-4" />
+                Grade Scales
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" disabled>
+                <ListChecks className="w-4 h-4" />
+                Mark Sheet Templates
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {user?.role === 'admin' && (
           <Card>

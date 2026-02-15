@@ -18,16 +18,16 @@ export default function CampusAttendancePage() {
 
   const isStaff = user?.role === 'admin' || user?.role === 'employee';
 
-  const { data: years } = useQuery({ queryKey: ['sms-academic-years'], queryFn: api.sms.academicYears.list });
+  const { data: years } = useQuery({ queryKey: ['sms-academic-years'], queryFn: () => api.sms.academicYears.list() });
   const activeYear = useMemo(() => (years || []).find((y: any) => y.isActive) ?? null, [years]);
   const { data: terms } = useQuery({
     queryKey: ['sms-terms', activeYear?.id ?? null],
     queryFn: () => api.sms.terms.list(activeYear?.id),
     enabled: !!activeYear?.id,
   });
-  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
-  const { data: sections } = useQuery({ queryKey: ['sms-sections'], queryFn: api.sms.sections.list });
-  const { data: subjects } = useQuery({ queryKey: ['sms-subjects'], queryFn: api.sms.subjects.list });
+  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: () => api.sms.classes.list() });
+  const { data: sections } = useQuery({ queryKey: ['sms-sections'], queryFn: () => api.sms.sections.list() });
+  const { data: subjects } = useQuery({ queryKey: ['sms-subjects'], queryFn: () => api.sms.subjects.list() });
 
   const subjectNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -101,7 +101,7 @@ export default function CampusAttendancePage() {
     enabled: !isStaff,
   });
 
-  const { data: staff } = useQuery({ queryKey: ['staff'], queryFn: api.users.listStaff, enabled: user?.role === 'admin' });
+  const { data: staff } = useQuery({ queryKey: ['staff'], queryFn: () => api.users.listStaff(), enabled: user?.role === 'admin' });
   const [staffMarks, setStaffMarks] = useState<Record<string, string>>({});
 
   return (

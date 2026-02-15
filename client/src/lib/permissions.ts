@@ -281,15 +281,15 @@ export const SUB_ROLE_PERMISSIONS: Record<SubRole, Permission[]> = {
 
 export function getPermissionsForRole(role: string, subRole?: SubRole): Permission[] {
   if (role === 'admin') {
-    return DEFAULT_ROLE_PERMISSIONS.admin;
+    return DEFAULT_ROLE_PERMISSIONS.admin ?? [];
   }
   
   if (role === 'employee' && subRole) {
-    return SUB_ROLE_PERMISSIONS[subRole];
+    return SUB_ROLE_PERMISSIONS[subRole] ?? [];
   }
   
   if (role === 'employee' && !subRole) {
-    return SUB_ROLE_PERMISSIONS.teacher;
+    return SUB_ROLE_PERMISSIONS.teacher ?? [];
   }
   
   return DEFAULT_ROLE_PERMISSIONS[role] || [];

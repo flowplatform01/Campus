@@ -45,6 +45,7 @@ export const users = pgTable("users", {
   points: integer("points").default(0),
   badges: jsonb("badges").$type<string[]>().default([]),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  onboardingCompletedAt: timestamp("onboarding_completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -175,6 +176,8 @@ export const announcements = pgTable("announcements", {
   postedAsSchool: boolean("posted_as_school").default(true).notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
+  audienceType: varchar("audience_type", { length: 30 }).default("entire_school").notNull(), // entire_school | class | parents_only | employees_only | sub_role
+  audienceId: varchar("audience_id", { length: 100 }), // classId or sub_role key when applicable
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -197,6 +200,7 @@ export const academicTerms = pgTable("academic_terms", {
   name: text("name").notNull(), // e.g. Term 1 / Semester 1
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
+  isActive: boolean("is_active").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -243,6 +247,7 @@ export const studentEnrollments = pgTable("student_enrollments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   schoolId: varchar("school_id").references(() => schools.id).notNull(),
   academicYearId: varchar("academic_year_id").references(() => academicYears.id).notNull(),
+  termId: varchar("term_id").references(() => academicTerms.id),
   studentId: varchar("student_id").references(() => users.id).notNull(),
   classId: varchar("class_id").references(() => schoolClasses.id).notNull(),
   sectionId: varchar("section_id").references(() => classSections.id),
@@ -499,6 +504,41 @@ export const admissions = pgTable("admissions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ============ Unified Enrollment Applications (Student self, Parent-submitted, Employee) ============
+export const enrollmentApplications = pgTable("enrollment_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: varchar("type", { length: 30 }).notNull(), // student_self | parent_student | employee
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  applicantUserId: varchar("applicant_user_id").references(() => users.id).notNull(),
+  status: varchar("status", { length: 30 }).default("submitted").notNull(), // draft | submitted | under_review | info_requested | approved | rejected | waitlisted | withdrawn
+  academicYearId: varchar("academic_year_id").references(() => academicYears.id),
+  classId: varchar("class_id").references(() => schoolClasses.id),
+  sectionId: varchar("section_id").references(() => classSections.id),
+  desiredSubRoleId: varchar("desired_sub_role_id").references(() => employeeSubRoles.id),
+  payload: jsonb("payload").$type<Record<string, unknown>>(), // child info, documents, CV url, etc.
+  pendingStudentProfileId: varchar("pending_student_profile_id"), // for parent flow: link to pending child
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Pending student profiles (parent-created, not yet approved)
+export const pendingStudentProfiles = pgTable("pending_student_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  parentId: varchar("parent_id").references(() => users.id).notNull(),
+  fullName: text("full_name").notNull(),
+  dateOfBirth: timestamp("date_of_birth").notNull(),
+  previousSchool: text("previous_school"),
+  desiredClassId: varchar("desired_class_id").references(() => schoolClasses.id),
+  academicYearId: varchar("academic_year_id").references(() => academicYears.id),
+  documents: jsonb("documents").$type<string[]>().default([]),
+  medicalInfo: text("medical_info"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ============ Academics ============
 export const grades = pgTable("grades", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -563,12 +603,14 @@ export const parentChildren = pgTable("parent_children", {
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPostSchema = createInsertSchema(posts).omit({ id: true, createdAt: true, updatedAt: true, likesCount: true });
 export const insertCommentSchema = createInsertSchema(comments).omit({ id: true, createdAt: true });
+export const insertAssignmentSubmissionSchema = createInsertSchema(smsAssignmentSubmissions).omit({ id: true, submittedAt: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertPost = z.infer<typeof insertPostSchema>;
 export type Post = typeof posts.$inferSelect;
 export type School = typeof schools.$inferSelect;
+export type InsertAssignmentSubmission = z.infer<typeof insertAssignmentSubmissionSchema>;
 
 // ============ SMS (Exam Management) ============
 export const smsExams = pgTable("sms_exams", {
@@ -643,4 +685,41 @@ export const smsStaffAttendanceEntries = pgTable("sms_staff_attendance_entries",
   note: text("note"),
   markedAt: timestamp("marked_at").defaultNow().notNull(),
   markedBy: varchar("marked_by").references(() => users.id).notNull(),
+});
+
+// ============ Student Achievements (school-scoped, rewards, visibility) ============
+export const studentAchievements = pgTable("student_achievements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  studentId: varchar("student_id").references(() => users.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  type: varchar("type", { length: 30 }).default("academic").notNull(),
+  points: integer("points").default(0).notNull(),
+  reward: text("reward"),
+  visibility: varchar("visibility", { length: 20 }).default("school").notNull(),
+  awardedBy: varchar("awarded_by").references(() => users.id),
+  awardedAt: timestamp("awarded_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Achievement definitions (catalog per school)
+export const smsAchievements = pgTable("sms_achievements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  type: varchar("type", { length: 30 }).default("academic").notNull(),
+  points: integer("points").default(0).notNull(),
+  icon: text("icon"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Awarded achievements (student + achievement definition)
+export const smsStudentAchievements = pgTable("sms_student_achievements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => users.id).notNull(),
+  achievementId: varchar("achievement_id").references(() => smsAchievements.id).notNull(),
+  achievedAt: timestamp("achieved_at").defaultNow().notNull(),
+  notes: text("notes"),
 });

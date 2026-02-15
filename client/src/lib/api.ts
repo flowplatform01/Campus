@@ -42,6 +42,7 @@ export interface ApiUser {
   avatar?: string;
   points?: number;
   badges?: string[];
+  onboardingCompletedAt?: string | null;
 }
 
 export interface AuthResponse {
@@ -102,6 +103,9 @@ export const api = {
         body: JSON.stringify({ token, password }),
       });
     },
+    completeOnboarding: async (): Promise<void> => {
+      return request("/api/auth/me/onboarding-complete", { method: "PATCH" });
+    },
   },
   posts: {
     getFeed: async (params?: { category?: string }) => {
@@ -127,11 +131,11 @@ export const api = {
   grades: {
     getByStudent: async (studentId?: string) => {
       const q = studentId ? `?studentId=${studentId}` : "";
-      return request(`/api/academics/grades${q}`);
+      return request<any[]>(`/api/academics/grades${q}`);
     },
   },
   assignments: {
-    getAll: async () => request("/api/academics/assignments"),
+    getAll: async () => request<any[]>("/api/academics/assignments"),
     submit: async (id: string, fileUrl?: string) =>
       request(`/api/academics/assignments/${id}/submit`, {
         method: "POST",
@@ -157,10 +161,10 @@ export const api = {
   },
   announcements: {
     list: async () => request<any[]>("/api/announcements"),
-    create: async (title: string, message: string) =>
+    create: async (data: { title: string; message: string; audienceType?: string; audienceId?: string }) =>
       request("/api/announcements", {
         method: "POST",
-        body: JSON.stringify({ title, message }),
+        body: JSON.stringify(data),
       }),
   },
   users: {
@@ -206,6 +210,14 @@ export const api = {
           notes?: string;
           lines: Array<{ feeHeadId?: string; description: string; amount: number }>;
         }) => request<any>("/api/sms/payments/invoices", { method: "POST", body: JSON.stringify(data) }),
+        bulkCreate: async (data: {
+          academicYearId?: string;
+          termId?: string;
+          studentIds: string[];
+          dueAt?: string;
+          notes?: string;
+          lines: Array<{ feeHeadId?: string; description: string; amount: number }>;
+        }) => request<any>("/api/sms/payments/invoices/bulk", { method: "POST", body: JSON.stringify(data) }),
       },
       payments: {
         create: async (data: { invoiceId: string; amount: number; method: string; reference?: string; paidAt?: string }) =>
@@ -289,6 +301,8 @@ export const api = {
       getMarks: async (examId: string) => request<any[]>(`/api/sms/exams/${examId}/marks`),
       saveMarks: async (examId: string, marks: Array<{ studentId: string; subjectId: string; marksObtained?: number; totalMarks: number; remarks?: string }>) =>
         request<any[]>(`/api/sms/exams/${examId}/marks`, { method: "POST", body: JSON.stringify(marks) }),
+      createSampleData: async () => request<any>("/api/sms/exams/create-sample", { method: "POST" }),
+      createSampleMarks: async (examId: string) => request<any>(`/api/sms/exams/${examId}/create-sample-marks`, { method: "POST" }),
     },
     expenses: {
       list: async () => request<any[]>("/api/sms/expenses"),
@@ -312,7 +326,7 @@ export const api = {
         request<any[]>(`/api/sms/staff-attendance/sessions/${sessionId}/entries`, { method: "POST", body: JSON.stringify(entries) }),
     },
     timetable: {
-      week: async (params?: { academicYearId?: string; termId?: string; classId?: string; sectionId?: string }) => {
+      week: async (params?: any) => {
         const q = new URLSearchParams();
         if (params?.academicYearId) q.set("academicYearId", params.academicYearId);
         if (params?.termId) q.set("termId", params.termId);
@@ -329,13 +343,14 @@ export const api = {
         weekday: string;
         startTime: string;
         endTime: string;
-        subjectId: string;
-        teacherId: string;
+        subjectId?: string;
+        teacherId?: string;
         room?: string;
       }) => request<any>("/api/sms/timetable/slots", { method: "POST", body: JSON.stringify(data) }),
-      deleteSlot: async (id: string) => request(`/api/sms/timetable/slots/${id}`, { method: "DELETE" }),
+      deleteSlot: async (slotId: string) => request<any>(`/api/sms/timetable/slots/${slotId}`, { method: "DELETE" }),
       publish: async (data: { academicYearId: string; termId: string; classId: string; sectionId?: string }) =>
         request<any>("/api/sms/timetable/publish", { method: "POST", body: JSON.stringify(data) }),
+      createSampleData: async () => request<any>("/api/sms/timetable/create-sample", { method: "POST" }),
     },
     academicYears: {
       list: async () => request<any[]>("/api/sms/academic-years"),
@@ -374,6 +389,7 @@ export const api = {
       list: async () => request<any[]>("/api/sms/subjects"),
       create: async (data: { name: string; code?: string }) =>
         request("/api/sms/subjects", { method: "POST", body: JSON.stringify(data) }),
+      seedSamples: async () => request<any>("/api/sms/subjects/seed-samples", { method: "POST" }),
       remove: async (id: string) => request(`/api/sms/subjects/${id}`, { method: "DELETE" }),
     },
     permissions: {
@@ -411,6 +427,248 @@ export const api = {
       update: async (id: string, data: { status?: string; notes?: string }) =>
         request(`/api/sms/admissions/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
       approve: async (id: string) => request(`/api/sms/admissions/${id}/approve`, { method: "POST" }),
+      remove: async (id: string) => request(`/api/sms/admissions/${id}`, { method: "DELETE" }),
+    },
+    enrollment: {
+      schools: {
+        search: async () => request<any[]>("/api/enrollment/schools"),
+      },
+      student: {
+        myApplications: async () => request<any[]>("/api/enrollment/student/applications"),
+        apply: async (data: {
+          schoolId: string;
+          classId: string;
+          guardianName: string;
+          guardianContact: string;
+          guardianEmail: string;
+          dateOfBirth: string;
+          address: string;
+          medicalInfo?: string;
+          documents: string[];
+        }) => request("/api/enrollment/student/apply", { method: "POST", body: JSON.stringify(data) }),
+      },
+      parent: {
+        myChildren: async () => request<any[]>("/api/enrollment/parent/children"),
+        registerChild: async (data: {
+          name: string;
+          dateOfBirth: string;
+          previousSchool?: string;
+          previousClass?: string;
+          medicalInfo?: string;
+          documents: string[];
+        }) => request("/api/enrollment/parent/register-child", { method: "POST", body: JSON.stringify(data) }),
+        myApplications: async () => request<any[]>("/api/enrollment/parent/applications"),
+        applyForChild: async (data: {
+          childId: string;
+          schoolId: string;
+          classId: string;
+          documents: string[];
+        }) => request("/api/enrollment/parent/apply-for-child", { method: "POST", body: JSON.stringify(data) }),
+      },
+      employee: {
+        myApplications: async () => request<any[]>("/api/enrollment/employee/applications"),
+        apply: async (data: {
+          schoolId: string;
+          desiredSubRole: string;
+          experience: string;
+          qualifications: string;
+          previousEmployment?: string;
+          references?: string;
+          coverLetter?: string;
+          documents: string[];
+        }) => request("/api/enrollment/employee/apply", { method: "POST", body: JSON.stringify(data) }),
+      },
+      admin: {
+        allApplications: async () => request<any[]>("/api/enrollment/applications"),
+        updateApplication: async (id: string, data: { status: string; reviewNotes?: string }) =>
+          request(`/api/enrollment/applications/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+        settings: async () => request<any>("/api/enrollment/settings"),
+        updateSettings: async (data: Record<string, unknown>) =>
+          request("/api/enrollment/settings", { method: "PATCH", body: JSON.stringify(data) }),
+      },
+    },
+  },
+  exams: {
+    list: async () => request<any[]>("/api/sms/exams"),
+    create: async (data: { academicYearId: string; termId: string; name: string; type: string; startDate?: string; endDate?: string }) =>
+      request<any>("/api/sms/exams", { method: "POST", body: JSON.stringify(data) }),
+    getMarks: async (examId: string) => request<any[]>(`/api/sms/exams/${examId}/marks`),
+    saveMarks: async (examId: string, marks: Array<{ studentId: string; subjectId: string; marksObtained?: number; totalMarks: number; remarks?: string }>) =>
+      request<any[]>(`/api/sms/exams/${examId}/marks`, { method: "POST", body: JSON.stringify(marks) }),
+  },
+  expenses: {
+    list: async () => request<any[]>("/api/sms/expenses"),
+    create: async (data: { category: string; title: string; amount: number; date?: string; notes?: string }) =>
+      request<any>("/api/sms/expenses", { method: "POST", body: JSON.stringify(data) }),
+  },
+  promotions: {
+    promote: async (data: {
+      currentAcademicYearId: string;
+      nextAcademicYearId: string;
+      currentClassId: string;
+      nextClassId: string;
+      studentIds: string[];
+    }) => request<any>("/api/sms/students/promote", { method: "POST", body: JSON.stringify(data) }),
+  },
+  staffAttendance: {
+    listSessions: async () => request<any[]>("/api/sms/staff-attendance/sessions"),
+    createSession: async (date: string) => request<any>("/api/sms/staff-attendance/sessions", { method: "POST", body: JSON.stringify({ date }) }),
+    listEntries: async (sessionId: string) => request<any[]>(`/api/sms/staff-attendance/sessions/${sessionId}/entries`),
+    saveEntries: async (sessionId: string, entries: Array<{ staffId: string; status: string; note?: string }>) =>
+      request<any[]>(`/api/sms/staff-attendance/sessions/${sessionId}/entries`, { method: "POST", body: JSON.stringify(entries) }),
+  },
+  timetable: {
+    week: async (params?: { academicYearId?: string; termId?: string; classId?: string; sectionId?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.academicYearId) q.set("academicYearId", params.academicYearId);
+      if (params?.termId) q.set("termId", params.termId);
+      if (params?.classId) q.set("classId", params.classId);
+      if (params?.sectionId) q.set("sectionId", params.sectionId);
+      const qs = q.toString();
+      return request<any>(`/api/sms/timetable/week${qs ? `?${qs}` : ""}`);
+    },
+    createSlot: async (data: {
+      academicYearId: string;
+      termId: string;
+      classId: string;
+      sectionId?: string;
+      weekday: string;
+      startTime: string;
+      endTime: string;
+      subjectId: string;
+      teacherId: string;
+      room?: string;
+    }) => request<any>("/api/sms/timetable/slots", { method: "POST", body: JSON.stringify(data) }),
+    deleteSlot: async (id: string) => request(`/api/sms/timetable/slots/${id}`, { method: "DELETE" }),
+    publish: async (data: { academicYearId: string; termId: string; classId: string; sectionId?: string }) =>
+      request<any>("/api/sms/timetable/publish", { method: "POST", body: JSON.stringify(data) }),
+  },
+  academicYears: {
+    list: async () => request<any[]>("/api/sms/academic-years"),
+    create: async (data: { name: string; startDate: string; endDate: string; isActive?: boolean }) =>
+      request("/api/sms/academic-years", { method: "POST", body: JSON.stringify(data) }),
+    update: async (id: string, data: Partial<{ name: string; startDate: string; endDate: string; isActive: boolean }>) =>
+      request(`/api/sms/academic-years/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    setActive: async (id: string) => request(`/api/sms/academic-years/${id}`, { method: "PATCH", body: JSON.stringify({ isActive: true }) }),
+    remove: async (id: string) => request(`/api/sms/academic-years/${id}`, { method: "DELETE" }),
+  },
+  terms: {
+    list: async (academicYearId?: string) => {
+      const q = academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : "";
+      return request<any[]>(`/api/sms/terms${q}`);
+    },
+    create: async (data: { academicYearId: string; name: string; startDate: string; endDate: string }) =>
+      request("/api/sms/terms", { method: "POST", body: JSON.stringify(data) }),
+    remove: async (id: string) => request(`/api/sms/terms/${id}`, { method: "DELETE" }),
+  },
+  classes: {
+    list: async () => request<any[]>("/api/sms/classes"),
+    create: async (data: { name: string; sortOrder?: number }) =>
+      request("/api/sms/classes", { method: "POST", body: JSON.stringify(data) }),
+    remove: async (id: string) => request(`/api/sms/classes/${id}`, { method: "DELETE" }),
+  },
+  sections: {
+    list: async (classId?: string) => {
+      const q = classId ? `?classId=${encodeURIComponent(classId)}` : "";
+      return request<any[]>(`/api/sms/sections${q}`);
+    },
+    create: async (data: { classId: string; name: string }) =>
+      request("/api/sms/sections", { method: "POST", body: JSON.stringify(data) }),
+    remove: async (id: string) => request(`/api/sms/sections/${id}`, { method: "DELETE" }),
+  },
+  subjects: {
+    list: async () => request<any[]>("/api/sms/subjects"),
+    create: async (data: { name: string; code?: string }) =>
+      request("/api/sms/subjects", { method: "POST", body: JSON.stringify(data) }),
+    remove: async (id: string) => request(`/api/sms/subjects/${id}`, { method: "DELETE" }),
+  },
+  permissions: {
+    list: async () => request<any[]>("/api/sms/permissions"),
+  },
+  subRoles: {
+    list: async () => request<any[]>("/api/sms/sub-roles"),
+    create: async (data: { key: string; name: string }) =>
+      request("/api/sms/sub-roles", { method: "POST", body: JSON.stringify(data) }),
+    remove: async (id: string) => request(`/api/sms/sub-roles/${id}`, { method: "DELETE" }),
+  },
+  subRoleGrants: {
+    list: async (subRoleId?: string) => {
+      const q = subRoleId ? `?subRoleId=${encodeURIComponent(subRoleId)}` : "";
+      return request<any[]>(`/api/sms/sub-role-grants${q}`);
+    },
+    set: async (data: { subRoleId: string; permissionKeys: string[] }) =>
+      request<any[]>("/api/sms/sub-role-grants", { method: "PUT", body: JSON.stringify(data) }),
+  },
+  admissions: {
+    list: async () => request<any[]>("/api/sms/admissions"),
+    create: async (data: {
+      academicYearId: string;
+      studentId: string;
+      classId: string;
+      status: string;
+      applicationDate: string;
+      notes?: string;
+    }) => request("/api/sms/admissions", { method: "POST", body: JSON.stringify(data) }),
+    update: async (id: string, data: any) =>
+      request(`/api/sms/admissions/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    remove: async (id: string) => request(`/api/sms/admissions/${id}`, { method: "DELETE" }),
+  },
+  enrollment: {
+    schools: {
+      search: async () => request<any[]>("/api/enrollment/schools"),
+    },
+    student: {
+      myApplications: async () => request<any[]>("/api/enrollment/student/applications"),
+      apply: async (data: {
+        schoolId: string;
+        classId: string;
+        guardianName: string;
+        guardianContact: string;
+        guardianEmail: string;
+        dateOfBirth: string;
+        address: string;
+        medicalInfo?: string;
+        documents: string[];
+      }) => request("/api/enrollment/student/apply", { method: "POST", body: JSON.stringify(data) }),
+    },
+    parent: {
+      myChildren: async () => request<any[]>("/api/enrollment/parent/children"),
+      registerChild: async (data: {
+        name: string;
+        dateOfBirth: string;
+        previousSchool?: string;
+        previousClass?: string;
+        medicalInfo?: string;
+        documents: string[];
+      }) => request("/api/enrollment/parent/register-child", { method: "POST", body: JSON.stringify(data) }),
+      myApplications: async () => request<any[]>("/api/enrollment/parent/applications"),
+      applyForChild: async (data: {
+        childId: string;
+        schoolId: string;
+        classId: string;
+        documents: string[];
+      }) => request("/api/enrollment/parent/apply-for-child", { method: "POST", body: JSON.stringify(data) }),
+    },
+    employee: {
+      myApplications: async () => request<any[]>("/api/enrollment/employee/applications"),
+      apply: async (data: {
+        schoolId: string;
+        desiredSubRole: string;
+        experience: string;
+        qualifications: string;
+        previousEmployment?: string;
+        references?: string;
+        coverLetter?: string;
+        documents: string[];
+      }) => request("/api/enrollment/employee/apply", { method: "POST", body: JSON.stringify(data) }),
+    },
+    admin: {
+      allApplications: async () => request<any[]>("/api/enrollment/applications"),
+      updateApplication: async (id: string, data: { status: string; reviewNotes?: string }) =>
+        request(`/api/enrollment/applications/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+      settings: async () => request<any>("/api/enrollment/settings"),
+      updateSettings: async (data: Record<string, unknown>) =>
+        request("/api/enrollment/settings", { method: "PATCH", body: JSON.stringify(data) }),
     },
   },
 };

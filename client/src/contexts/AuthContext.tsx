@@ -14,6 +14,7 @@ function apiUserToUser(u: ApiUser): User {
     schoolLinked: u.schoolLinked ?? false,
     points: u.points,
     badges: u.badges ?? [],
+    onboardingCompletedAt: u.onboardingCompletedAt ?? undefined,
   };
 }
 

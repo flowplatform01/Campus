@@ -3,18 +3,85 @@ import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { badges } from '@/data-access/mockData';
-import { Trophy, Award, Target, TrendingUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { Trophy, Award, Target, TrendingUp, Plus, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useQuery, useMutation } from '@tanstack/react-query';
 
 export default function Achievements() {
   const { user } = useRequireAuth(['student']);
-
-  const userBadges = user?.badges || [];
-  const userPoints = (user as any)?.points || 0;
+  const [userBadges, setUserBadges] = useState(user?.badges || []);
+  const [userPoints, setUserPoints] = useState((user as any)?.points || 0);
+  const [newAchievement, setNewAchievement] = useState({
+    title: '',
+    description: '',
+    points: 0,
+    badgeId: '',
+    type: 'academic'
+  });
 
   const nextLevelPoints = 1500;
   const pointsProgress = (userPoints / nextLevelPoints) * 100;
+
+  // Mock achievements data
+  const availableAchievements = [
+    { id: 'perfect_attendance', title: 'Perfect Attendance', description: 'No absences for a month', points: 50, badgeId: 'perfect_attendance', type: 'attendance' },
+    { id: 'honor_roll', title: 'Honor Roll', description: 'Named to honor roll', points: 100, badgeId: 'honor_roll', type: 'academic' },
+    { id: 'top_student', title: 'Top Student', description: 'Highest GPA in class', points: 75, badgeId: 'top_student', type: 'academic' },
+    { id: 'subject_master', title: 'Subject Master', description: 'Perfect scores in 3+ subjects', points: 150, badgeId: 'subject_master', type: 'academic' },
+    { id: 'leadership', title: 'Leadership', description: 'Demonstrated leadership', points: 125, badgeId: 'leadership', type: 'leadership' },
+    { id: 'sports_champion', title: 'Sports Champion', description: 'Won 3+ sports competitions', points: 200, badgeId: 'sports_champion', type: 'sports' },
+    { id: 'creativity_award', title: 'Creativity Award', description: 'Outstanding creative project', points: 300, badgeId: 'creativity_award', type: 'creative' },
+    { id: 'community_service', title: 'Community Service', description: '50+ hours community service', points: 100, badgeId: 'community_service', type: 'service' },
+    { id: 'perfect_exam', title: 'Perfect Exam Score', description: '100% on final exams', points: 100, badgeId: 'perfect_exam', type: 'academic' }
+  ];
+
+  const { toast } = useToast();
+  const { data: achievementsData, isLoading: achievementsLoading } = useQuery({
+    queryKey: ['achievements', user?.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/sms/achievements`);
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!user?.id,
+  });
+
+  const { data: userStats, isLoading: statsLoading } = useQuery({
+    queryKey: ['user-stats', user?.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/user-stats/${user?.id}`);
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: !!user?.id,
+  });
+
+  const achievementsList = Array.isArray(achievementsData) ? achievementsData : [];
+  const allAchievements = [...availableAchievements, ...achievementsList];
+
+  const createAchievement = useMutation({
+    mutationFn: (achievement: { title: string; description: string; points: number; badgeId: string; type: string }) =>
+      fetch('/api/sms/achievements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('campus_access_token')}` },
+        body: JSON.stringify({ ...achievement }),
+      }),
+    onSuccess: async () => {
+      setNewAchievement({ title: '', description: '', points: 0, badgeId: '', type: 'academic' });
+      setUserBadges([...userBadges, newAchievement.badgeId || newAchievement.title]);
+      setUserPoints(userPoints + newAchievement.points);
+      toast({ title: 'Achievement unlocked!', description: `You've earned ${newAchievement.points} points and the "${newAchievement.title}" badge!` });
+    },
+    onError: (e: unknown) => {
+      toast({ title: 'Failed to unlock achievement', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' });
+    },
+  });
 
   const leaderboard = [
     { rank: 1, name: 'Emma Wilson', points: 1850, avatar: '👩' },
@@ -93,8 +160,8 @@ export default function Achievements() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-              {badges.map((badge, index) => {
-                const earned = userBadges.includes(badge.id);
+              {allAchievements.map((badge: { id: string; title: string; description: string; points: number; badgeId: string; type: string }, index: number) => {
+                const earned = Array.isArray(userBadges) ? (userBadges as string[]).includes(badge.id) || (userBadges as string[]).includes(badge.badgeId) : false;
                 return (
                   <motion.div
                     key={badge.id}
@@ -109,8 +176,8 @@ export default function Achievements() {
                           : 'opacity-50 grayscale'
                       }`}
                     >
-                      <div className="text-4xl mb-2">{badge.icon}</div>
-                      <p className="text-sm font-semibold">{badge.name}</p>
+                      <div className="text-4xl mb-2">🏅</div>
+                      <p className="text-sm font-semibold">{badge.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">{badge.description}</p>
                       {earned && (
                         <Badge variant="secondary" className="mt-2">

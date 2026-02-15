@@ -11,6 +11,7 @@ import {
   subjects,
   schools,
   users,
+  timetableSlots,
 } from "@shared/schema";
 
 async function ensureSchool(name: string) {
@@ -147,20 +148,23 @@ async function main() {
   let [term] = await db
     .select()
     .from(academicTerms)
-    .where(eq(academicTerms.academicYearId, year.id))
+    .where(eq(academicTerms.academicYearId, year!.id))
     .limit(1);
   if (!term) {
     const [createdTerm] = await db
       .insert(academicTerms)
       .values({
         schoolId: school.id,
-        academicYearId: year.id,
+        academicYearId: year!.id,
         name: "Term 1",
-        startDate: year.startDate,
-        endDate: year.endDate,
+        startDate: year!.startDate,
+        endDate: year!.endDate,
+        isActive: true,
       })
       .returning();
     term = createdTerm;
+  } else {
+    await db.update(academicTerms).set({ isActive: true }).where(eq(academicTerms.id, term.id));
   }
 
   let [cls] = await db
@@ -197,12 +201,32 @@ async function main() {
   if (!enrollment) {
     await db.insert(studentEnrollments).values({
       schoolId: school.id,
-      academicYearId: year.id,
+      academicYearId: year!.id,
       studentId: student.id,
-      classId: cls.id,
+      classId: cls!.id,
       sectionId: null,
       status: "active",
     });
+  }
+
+  const [existingSlot] = await db.select().from(timetableSlots).where(eq(timetableSlots.schoolId, school.id)).limit(1);
+  if (!existingSlot && year && term && cls && subj && teacher) {
+    const days = ["mon", "tue", "wed", "thu", "fri"] as const;
+    for (let i = 0; i < 5; i++) {
+      await db.insert(timetableSlots).values({
+        schoolId: school.id,
+        academicYearId: year.id,
+        termId: term.id,
+        classId: cls.id,
+        sectionId: null,
+        weekday: days[i],
+        startTime: "08:00",
+        endTime: "09:00",
+        subjectId: subj.id,
+        teacherId: teacher.id,
+        room: "Room 1",
+      } as typeof timetableSlots.$inferInsert);
+    }
   }
 
   console.log("Seed complete");

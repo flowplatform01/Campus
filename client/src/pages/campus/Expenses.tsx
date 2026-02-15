@@ -35,8 +35,8 @@ export default function CampusExpensesPage() {
   const createExpense = useMutation({
     mutationFn: () => api.sms.expenses.create({
       ...newExpense,
-      amount: parseInt(newExpense.amount),
-      date: new Date(newExpense.date).toISOString()
+      amount: parseInt(String(newExpense.amount), 10),
+      date: (newExpense.date ? new Date(newExpense.date) : new Date()).toISOString()
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sms-expenses'] });

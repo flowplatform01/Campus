@@ -49,8 +49,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/:id/join", requireAuth, async (req: AuthRequest, res) => {
   try {
+    const communityId = req.params.id;
+    if (!communityId) return res.status(400).json({ message: "Community ID is required" });
     await db.insert(communityMembers).values({
-      communityId: req.params.id,
+      communityId,
       userId: req.user!.id,
       role: "member",
     });

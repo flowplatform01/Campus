@@ -13,6 +13,22 @@ import { ReferralSystem } from '@/components/gamification/ReferralSystem';
 import { GradesChart } from '@/components/academics/GradesChart';
 import { useMemo } from 'react';
 
+type Grade = {
+  id: string;
+  subject: string;
+  term: string;
+  score: number;
+  maxScore: number;
+};
+
+type Assignment = {
+  id: string;
+  title: string;
+  subject: string;
+  dueDate: string;
+  submitted: boolean;
+};
+
 export default function StudentDashboard() {
   const { user } = useRequireAuth(['student']);
 
@@ -51,20 +67,20 @@ export default function StudentDashboard() {
       .slice(0, 5);
   }, [week, todayKey]);
 
-  const { data: grades } = useQuery({
+  const { data: grades = [] } = useQuery<Grade[]>({
     queryKey: ['grades', user?.id],
-    queryFn: () => api.grades.getByStudent(user?.id)
+    queryFn: () => api.grades.getByStudent(user?.id) as Promise<Grade[]>,
   });
 
-  const { data: assignments } = useQuery({
+  const { data: assignments = [] } = useQuery<Assignment[]>({
     queryKey: ['assignments'],
-    queryFn: api.assignments.getAll
+    queryFn: () => api.assignments.getAll() as Promise<Assignment[]>
   });
 
-  const averageGrade = grades && grades.length > 0 
-    ? grades.reduce((acc, g) => acc + (g.score / g.maxScore) * 100, 0) / grades.length
+  const averageGrade = grades.length > 0 
+    ? grades.reduce((acc: number, g: Grade) => acc + (g.score / g.maxScore) * 100, 0) / grades.length
     : 0;
-  const pendingAssignments = assignments?.filter(a => !a.submitted).length || 0;
+  const pendingAssignments = assignments.filter((a) => !a.submitted).length;
 
   return (
     <DashboardLayout>
@@ -181,7 +197,7 @@ export default function StudentDashboard() {
           </motion.div>
         </div>
 
-        {grades && grades.length > 0 && (
+        {grades.length > 0 && (
           <GradesChart data={grades} />
         )}
 
@@ -193,7 +209,7 @@ export default function StudentDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {grades?.slice(0, 4).map((grade) => (
+                {grades.slice(0, 4).map((grade) => (
                   <div key={grade.id} className="flex items-center justify-between">
                     <div className="flex-1">
                       <p className="font-medium">{grade.subject}</p>
@@ -215,7 +231,7 @@ export default function StudentDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {assignments?.slice(0, 4).map((assignment) => (
+                {assignments.slice(0, 4).map((assignment) => (
                   <div key={assignment.id} className="flex items-center justify-between">
                     <div className="flex-1">
                       <p className="font-medium">{assignment.title}</p>

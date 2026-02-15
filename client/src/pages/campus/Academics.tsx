@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { api } from '@/lib/api';
@@ -7,11 +8,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { GradesChart } from '@/components/academics/GradesChart';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Plus, GraduationCap } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { Plus, GraduationCap, Book, Edit, Trash2 } from 'lucide-react';
 
 export default function CampusAcademicsPage() {
   useRequireAuth();
   const { user } = useAuth();
+  const qc = useQueryClient();
+  const { toast } = useToast();
 
   const { data: grades } = useQuery({
     queryKey: ['grades', user?.id],
@@ -19,9 +25,58 @@ export default function CampusAcademicsPage() {
     enabled: !!user?.id,
   });
 
+  const seedSampleSubjects = useMutation({
+    mutationFn: () => api.sms.subjects.seedSamples(),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['subjects'] });
+      await qc.invalidateQueries({ queryKey: ['sms-subjects'] });
+      toast({ title: 'Sample subjects created' });
+    },
+    onError: (e: any) => toast({ title: 'Failed', description: e?.message || 'Error', variant: 'destructive' }),
+  });
+
   const { data: exams } = useQuery({
     queryKey: ['exams'],
     queryFn: () => api.exams.list(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  const { data: subjects, isLoading: subjectsLoading } = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => api.sms.subjects.list(),
+    enabled: user?.role === 'admin' || user?.role === 'employee',
+  });
+
+  const [subjectForm, setSubjectForm] = useState({
+    name: '',
+    code: '',
+  });
+
+  const [editingSubject, setEditingSubject] = useState<string | null>(null);
+
+  const createSubject = useMutation({
+    mutationFn: () => api.sms.subjects.create(subjectForm),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['subjects'] });
+      await qc.invalidateQueries({ queryKey: ['sms-subjects'] });
+      setSubjectForm({ name: '', code: '' });
+      toast({ title: 'Subject created', description: 'Subject has been added successfully.' });
+    },
+    onError: (e: any) => {
+      toast({ title: 'Failed to create subject', description: e?.message || 'Error', variant: 'destructive' });
+    },
+  });
+
+  const deleteSubject = useMutation({
+    mutationFn: (id: string) => api.sms.subjects.remove(id),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['subjects'] });
+      await qc.invalidateQueries({ queryKey: ['sms-subjects'] });
+      toast({ title: 'Subject deleted', description: 'Subject has been removed successfully.' });
+    },
+    onError: (e: any) => {
+      toast({ title: 'Failed to delete subject', description: e?.message || 'Error', variant: 'destructive' });
+    },
   });
 
   return (
@@ -50,6 +105,7 @@ export default function CampusAcademicsPage() {
           <TabsList>
             <TabsTrigger value="grades">Grades</TabsTrigger>
             <TabsTrigger value="exams">Exams</TabsTrigger>
+            {user?.role === 'admin' && <TabsTrigger value="subjects">Subjects</TabsTrigger>}
             {user?.role === 'admin' && <TabsTrigger value="promotions">Promotions</TabsTrigger>}
           </TabsList>
 
@@ -57,15 +113,108 @@ export default function CampusAcademicsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Grades Overview</CardTitle>
-                <CardDescription>{grades && grades.length > 0 ? 'Your latest performance trend' : 'No grades available yet'}</CardDescription>
+                <CardDescription>{Array.isArray(grades) && grades.length > 0 ? 'Your latest performance trend' : 'No grades available yet'}</CardDescription>
               </CardHeader>
               <CardContent>
-                {grades && grades.length > 0 ? <GradesChart data={grades} /> : <div className="text-sm text-muted-foreground">No data</div>}
+                {Array.isArray(grades) && grades.length > 0 ? <GradesChart data={grades as { subject: string; score: number; maxScore: number }[]} /> : <div className="text-sm text-muted-foreground">No data</div>}
               </CardContent>
             </Card>
           </TabsContent>
 
+          {user?.role === 'admin' && (
+            <TabsContent value="subjects" className="space-y-6 mt-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Book className="h-5 w-5" />
+                      Create Subject
+                    </CardTitle>
+                    <CardDescription>Add new subjects to the curriculum</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <form onSubmit={(e) => { e.preventDefault(); createSubject.mutate(); }} className="space-y-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="name">Subject Name</Label>
+                        <Input
+                          id="name"
+                          value={subjectForm.name}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+                          placeholder="e.g., Mathematics"
+                          required
+                        />
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="code">Subject Code (optional)</Label>
+                        <Input
+                          id="code"
+                          value={subjectForm.code}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
+                          placeholder="e.g., MATH"
+                        />
+                      </div>
+
+                      <Button type="submit" disabled={createSubject.isPending} className="w-full">
+                        {createSubject.isPending ? 'Creating...' : 'Create Subject'}
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Existing Subjects</CardTitle>
+                    <CardDescription>Manage curriculum subjects</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mb-3"
+                      onClick={() => seedSampleSubjects.mutate()}
+                      disabled={seedSampleSubjects.isPending}
+                    >
+                      {seedSampleSubjects.isPending ? 'Creating...' : 'Create Sample Subjects'}
+                    </Button>
+                    {subjectsLoading ? (
+                      <div className="text-center py-8">Loading subjects...</div>
+                    ) : subjects?.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No subjects found. Create your first subject.
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-64 overflow-y-auto">
+                        {(subjects ?? []).map((subject: any) => (
+                          <div key={subject.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div>
+                              <h4 className="font-medium">{subject.name}</h4>
+                              {subject.code && (
+                                <p className="text-sm text-muted-foreground">Code: {subject.code}</p>
+                              )}
+                            </div>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => deleteSubject.mutate(subject.id)}
+                              disabled={deleteSubject.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+          )}
+
           <TabsContent value="exams" className="space-y-6 mt-6">
+            <div className="mb-4">
+              <Input placeholder="Search exams..." className="max-w-md" />
+            </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {(exams || []).map((exam) => (
                 <Card key={exam.id}>

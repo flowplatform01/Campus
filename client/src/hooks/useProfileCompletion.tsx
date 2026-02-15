@@ -14,8 +14,19 @@ export function useProfileCompletion() {
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
+    // Never show if onboarding was completed and persisted in DB
+    if (user?.onboardingCompletedAt) {
+      setShowOnboarding(false);
+      return;
+    }
     if (user && user.profileCompletion < 100) {
-      setShowOnboarding(true);
+      // Check if user has dismissed onboarding recently (local fallback before DB persist)
+      const lastDismissed = localStorage.getItem('onboarding_dismissed');
+      const now = Date.now();
+      const oneWeek = 7 * 24 * 60 * 60 * 1000;
+      if (!lastDismissed || (now - parseInt(lastDismissed, 10)) > oneWeek) {
+        setShowOnboarding(true);
+      }
     }
   }, [user]);
 

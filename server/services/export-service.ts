@@ -1,0 +1,440 @@
+import { eq, and, desc, isNotNull } from "drizzle-orm";
+import { db } from "../db.js";
+import {
+  // SMS Tables for comprehensive data
+  smsAssignments,
+  smsAssignmentSubmissions,
+  smsAttendanceSessions,
+  smsAttendanceEntries,
+  academicYears,
+  academicTerms,
+  schoolClasses,
+  classSections,
+  subjects,
+  studentEnrollments,
+  users,
+  schools
+} from "@shared/schema";
+
+// PDF Generation
+export async function generatePDFReport(data: any, type: string): Promise<Buffer> {
+  // Simple PDF generation using browser console methods
+  // In production, you'd use a proper PDF library like puppeteer or jsPDF
+  const html = generateHTMLReport(data, type);
+  
+  // For now, return a simple text-based report
+  const reportText = generateTextReport(data, type);
+  return Buffer.from(reportText, 'utf-8');
+}
+
+// Excel/CSV Generation
+export async function generateExcelReport(data: any[], type: string): Promise<Buffer> {
+  const csv = convertToCSV(data, type);
+  return Buffer.from(csv, 'utf-8');
+}
+
+// Generate Academic Report for Student
+export async function generateStudentReport(studentId: string, academicYearId?: string, termId?: string) {
+  try {
+    // Get student info
+    const [student] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, studentId))
+      .limit(1);
+
+    if (!student) {
+      throw new Error('Student not found');
+    }
+
+    // Get enrollment
+    const [enrollment] = await db
+      .select()
+      .from(studentEnrollments)
+      .where(
+        and(
+          eq(studentEnrollments.studentId, studentId),
+          academicYearId ? eq(studentEnrollments.academicYearId, academicYearId) : undefined,
+          termId ? eq(studentEnrollments.termId, termId) : undefined,
+          eq(studentEnrollments.status, "active")
+        )
+      )
+      .limit(1);
+
+    if (!enrollment) {
+      throw new Error('Student enrollment not found');
+    }
+
+    // Get assignment submissions with grades
+    const assignments = await db
+      .select({
+        assignment: {
+          title: smsAssignments.title,
+          maxScore: smsAssignments.maxScore,
+          dueAt: smsAssignments.dueAt,
+          subjectId: smsAssignments.subjectId,
+        },
+        submission: {
+          score: smsAssignmentSubmissions.score,
+          feedback: smsAssignmentSubmissions.feedback,
+          submittedAt: smsAssignmentSubmissions.submittedAt,
+          reviewedAt: smsAssignmentSubmissions.reviewedAt,
+        },
+        subject: {
+          name: subjects.name,
+          code: subjects.code,
+        }
+      })
+      .from(smsAssignmentSubmissions)
+      .innerJoin(smsAssignments, eq(smsAssignmentSubmissions.assignmentId, smsAssignments.id))
+      .innerJoin(subjects, eq(smsAssignments.subjectId, subjects.id))
+      .where(
+        and(
+          eq(smsAssignmentSubmissions.studentId, studentId),
+          eq(smsAssignments.academicYearId, enrollment.academicYearId),
+          termId ? eq(smsAssignments.termId, termId) : undefined
+        )
+      )
+      .orderBy(desc(smsAssignmentSubmissions.submittedAt));
+
+    // Get attendance records
+    const attendance = await db
+      .select({
+        entry: smsAttendanceEntries,
+        session: {
+          date: smsAttendanceSessions.date,
+          subjectId: smsAttendanceSessions.subjectId,
+        },
+        subject: subjects.name,
+      })
+      .from(smsAttendanceEntries)
+      .innerJoin(smsAttendanceSessions, eq(smsAttendanceEntries.sessionId, smsAttendanceSessions.id))
+      .innerJoin(subjects, eq(smsAttendanceSessions.subjectId, subjects.id))
+      .where(
+        and(
+          eq(smsAttendanceEntries.studentId, studentId),
+          eq(smsAttendanceSessions.academicYearId, enrollment.academicYearId),
+          termId ? eq(smsAttendanceSessions.termId, termId) : undefined
+        )
+      )
+      .orderBy(desc(smsAttendanceSessions.date));
+
+    return {
+      student,
+      enrollment,
+      assignments,
+      attendance,
+      summary: {
+        totalAssignments: assignments.length,
+        submittedAssignments: assignments.filter(a => a.submission).length,
+        averageScore: assignments
+          .filter(a => a.submission?.score !== null)
+          .reduce((sum, a) => sum + (a.submission?.score || 0), 0) / 
+          assignments.filter(a => a.submission?.score !== null).length || 1,
+        totalAttendanceDays: attendance.length,
+        presentDays: attendance.filter(a => a.entry.status === 'present').length,
+        attendanceRate: attendance.length > 0 ? 
+          (attendance.filter(a => a.entry.status === 'present').length / attendance.length * 100).toFixed(1) : '0'
+      }
+    };
+  } catch (error) {
+    console.error('Error generating student report:', error);
+    throw error;
+  }
+}
+
+// Generate Class Performance Report
+export async function generateClassReport(classId: string, academicYearId?: string, termId?: string) {
+  try {
+    // Get all students in class
+    const students = await db
+      .select({
+        student: {
+          name: users.name,
+          studentId: users.studentId,
+          email: users.email,
+        },
+        enrollment: studentEnrollments,
+      })
+      .from(studentEnrollments)
+      .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+      .where(
+        and(
+          eq(studentEnrollments.classId, classId),
+          academicYearId ? eq(studentEnrollments.academicYearId, academicYearId) : undefined,
+          termId ? eq(studentEnrollments.termId, termId) : undefined,
+          eq(studentEnrollments.status, "active")
+        )
+      );
+
+    // Get class performance data
+    const performanceData = await Promise.all(
+      students.map(async (studentData) => {
+        const assignments = await db
+          .select({
+            assignment: smsAssignments.title,
+            maxScore: smsAssignments.maxScore,
+            submission: smsAssignmentSubmissions.score,
+          })
+          .from(smsAssignmentSubmissions)
+          .innerJoin(smsAssignments, eq(smsAssignmentSubmissions.assignmentId, smsAssignments.id))
+          .where(
+            and(
+              studentData.student.studentId ? eq(smsAssignmentSubmissions.studentId, studentData.student.studentId) : undefined,
+              eq(smsAssignments.classId, classId),
+              academicYearId ? eq(smsAssignments.academicYearId, academicYearId) : undefined,
+              termId ? eq(smsAssignments.termId, termId) : undefined,
+              isNotNull(smsAssignmentSubmissions.score)
+            )
+          );
+
+        const averageScore = assignments.length > 0 ? 
+          assignments.reduce((sum, a: any) => sum + (a.score || 0), 0) / assignments.length : 0;
+
+        return {
+          ...studentData,
+          totalAssignments: assignments.length,
+          submittedAssignments: assignments.length,
+          averageScore: averageScore.toFixed(2),
+          highestScore: Math.max(...assignments.map((a: any) => a.score || 0)),
+          lowestScore: Math.min(...assignments.map((a: any) => a.score || 0)),
+        };
+      })
+    );
+
+    return {
+      classId,
+      students: performanceData,
+      summary: {
+        totalStudents: students.length,
+        classAverage: performanceData.reduce((sum, s: any) => sum + parseFloat(s.averageScore), 0) / students.length,
+        topPerformer: performanceData.reduce((top: any, current: any) => 
+          parseFloat(top.averageScore) > parseFloat(current.averageScore) ? top : current, performanceData[0] || {}),
+        needsImprovement: performanceData.filter(s => parseFloat(s.averageScore) < 60).length,
+      }
+    };
+  } catch (error) {
+    console.error('Error generating class report:', error);
+    throw error;
+  }
+}
+
+// Generate Attendance Summary Report
+export async function generateAttendanceReport(classId?: string, academicYearId?: string, termId?: string) {
+  try {
+    const attendanceRecords = await db
+      .select({
+        entry: smsAttendanceEntries,
+        session: {
+          date: smsAttendanceSessions.date,
+          subjectId: smsAttendanceSessions.subjectId,
+        },
+        subject: subjects.name,
+        student: {
+          name: users.name,
+          studentId: users.studentId,
+        },
+        class: schoolClasses.name,
+        section: classSections.name,
+      })
+      .from(smsAttendanceEntries)
+      .innerJoin(smsAttendanceSessions, eq(smsAttendanceEntries.sessionId, smsAttendanceSessions.id))
+      .innerJoin(subjects, eq(smsAttendanceSessions.subjectId, subjects.id))
+      .innerJoin(users, eq(smsAttendanceEntries.studentId, users.id))
+      .innerJoin(studentEnrollments, eq(users.id, studentEnrollments.studentId))
+      .innerJoin(schoolClasses, eq(studentEnrollments.classId, schoolClasses.id))
+      .leftJoin(classSections, eq(studentEnrollments.sectionId, classSections.id))
+      .where(
+        and(
+          classId ? eq(studentEnrollments.classId, classId) : undefined,
+          academicYearId ? eq(smsAttendanceSessions.academicYearId, academicYearId) : undefined,
+          termId ? eq(smsAttendanceSessions.termId, termId) : undefined
+        )
+      )
+      .orderBy(desc(smsAttendanceSessions.date));
+
+    // Generate summary statistics
+    const summary = attendanceRecords.reduce((acc: any, record: any) => {
+      const date = record.session.date.toISOString().split('T')[0];
+      if (!acc.dailyStats[date]) {
+        acc.dailyStats[date] = { present: 0, absent: 0, late: 0, excused: 0 };
+      }
+      
+      const status = record.entry.status;
+      if (['present', 'absent', 'late', 'excused'].includes(status)) {
+        acc.dailyStats[date][status]++;
+        acc.total[status]++;
+      }
+      
+      return acc;
+    }, { dailyStats: {}, total: { present: 0, absent: 0, late: 0, excused: 0 } });
+
+    return {
+      records: attendanceRecords,
+      summary,
+      statistics: {
+        totalRecords: attendanceRecords.length,
+        presentRate: ((summary.total.present / (attendanceRecords.length || 1)) * 100).toFixed(1),
+        absentRate: ((summary.total.absent / (attendanceRecords.length || 1)) * 100).toFixed(1),
+        averageDailyAttendance: Object.keys(summary.dailyStats).length > 0 ? 
+          (summary.total.present / Object.keys(summary.dailyStats).length).toFixed(1) : '0',
+      }
+    };
+  } catch (error) {
+    console.error('Error generating attendance report:', error);
+    throw error;
+  }
+}
+
+// Helper functions
+function generateHTMLReport(data: any, type: string): string {
+  const title = type === 'student' ? 'Student Academic Report' : 'Class Performance Report';
+  
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>${title}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .section { margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .summary { background-color: #f9f9f9; padding: 15px; border-radius: 5px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>${title}</h1>
+        <p>Generated on ${new Date().toLocaleDateString()}</p>
+      </div>
+      ${generateReportContent(data, type)}
+    </body>
+    </html>
+  `;
+}
+
+function generateReportContent(data: any, type: string): string {
+  if (type === 'student') {
+    return `
+      <div class="section">
+        <h2>Student Information</h2>
+        <p><strong>Name:</strong> ${data.student.name}</p>
+        <p><strong>Student ID:</strong> ${data.student.studentId}</p>
+        <p><strong>Email:</strong> ${data.student.email}</p>
+      </div>
+      
+      <div class="section">
+        <h2>Academic Summary</h2>
+        <div class="summary">
+          <p><strong>Total Assignments:</strong> ${data.summary.totalAssignments}</p>
+          <p><strong>Submitted:</strong> ${data.summary.submittedAssignments}</p>
+          <p><strong>Average Score:</strong> ${data.summary.averageScore}%</p>
+          <p><strong>Attendance Rate:</strong> ${data.summary.attendanceRate}%</p>
+        </div>
+      </div>
+      
+      <div class="section">
+        <h2>Assignment Details</h2>
+        <table>
+          <tr>
+            <th>Assignment</th>
+            <th>Subject</th>
+            <th>Score</th>
+            <th>Submitted</th>
+          </tr>
+          ${data.assignments.map((assignment: any) => `
+            <tr>
+              <td>${assignment.assignment.title}</td>
+              <td>${assignment.subject.name}</td>
+              <td>${assignment.submission?.score || 'Not graded'}</td>
+              <td>${new Date(assignment.submission?.submittedAt).toLocaleDateString()}</td>
+            </tr>
+          `).join('')}
+        </table>
+      </div>
+    `;
+  }
+  
+  return '<p>Report content not implemented</p>';
+}
+
+function generateTextReport(data: any, type: string): string {
+  const title = type === 'student' ? 'STUDENT ACADEMIC REPORT' : 'CLASS PERFORMANCE REPORT';
+  
+  return `
+${title}
+Generated: ${new Date().toLocaleDateString()}
+${'='.repeat(50)}
+
+${generateTextContent(data, type)}
+${'='.repeat(50)}
+  `;
+}
+
+function generateTextContent(data: any, type: string): string {
+  if (type === 'student') {
+    return `
+STUDENT INFORMATION
+----------------
+Name: ${data.student.name}
+Student ID: ${data.student.studentId}
+Email: ${data.student.email}
+
+ACADEMIC SUMMARY
+------------------
+Total Assignments: ${data.summary.totalAssignments}
+Submitted: ${data.summary.submittedAssignments}
+Average Score: ${data.summary.averageScore}%
+Attendance Rate: ${data.summary.attendanceRate}%
+
+ASSIGNMENT DETAILS
+------------------
+${data.assignments.map((assignment: any, index: number) => `
+${index + 1}. ${assignment.assignment.title}
+   Subject: ${assignment.subject.name}
+   Score: ${assignment.submission?.score || 'Not graded'}
+   Submitted: ${new Date(assignment.submission?.submittedAt).toLocaleDateString()}
+   Feedback: ${assignment.submission?.feedback || 'No feedback'}
+`).join('\n')}
+    `;
+  }
+  
+  return 'Report content not implemented';
+}
+
+function convertToCSV(data: any[], type: string): string {
+  if (type === 'attendance') {
+    const headers = ['Date', 'Student Name', 'Student ID', 'Subject', 'Status', 'Notes'];
+    const rows = data.map(record => [
+      record.session.date,
+      record.student.name,
+      record.student.studentId,
+      record.subject.name,
+      record.entry.status,
+      record.entry.note || ''
+    ]);
+    
+    return [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+  }
+  
+  if (type === 'class_performance') {
+    const headers = ['Student Name', 'Student ID', 'Email', 'Total Assignments', 'Submitted', 'Average Score', 'Highest Score', 'Lowest Score'];
+    const rows = data.map(student => [
+      student.name,
+      student.studentId,
+      student.email,
+      student.totalAssignments,
+      student.submittedAssignments,
+      student.averageScore,
+      student.highestScore,
+      student.lowestScore
+    ]);
+    
+    return [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+  }
+  
+  return 'No CSV data available';
+}

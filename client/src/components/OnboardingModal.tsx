@@ -2,10 +2,23 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useProfileCompletion } from '@/hooks/useProfileCompletion';
+import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/lib/api';
 import { CheckCircle2, Circle } from 'lucide-react';
 
 export function OnboardingModal() {
   const { steps, progress, showOnboarding, setShowOnboarding } = useProfileCompletion();
+  const { updateUser } = useAuth();
+
+  const handleDismiss = async () => {
+    setShowOnboarding(false);
+    try {
+      await api.auth.completeOnboarding();
+      updateUser({ onboardingCompletedAt: new Date().toISOString() });
+    } catch {
+      localStorage.setItem('onboarding_dismissed', Date.now().toString());
+    }
+  };
 
   return (
     <Dialog open={showOnboarding} onOpenChange={setShowOnboarding}>
@@ -62,7 +75,7 @@ export function OnboardingModal() {
           <Button
             className="w-full"
             variant="outline"
-            onClick={() => setShowOnboarding(false)}
+            onClick={handleDismiss}
           >
             I'll do this later
           </Button>

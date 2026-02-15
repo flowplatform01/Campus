@@ -3,7 +3,7 @@ import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db.js";
 import { posts, postLikes, comments, schools, users } from "@shared/schema";
-import { requireAuth, AuthRequest } from "../middleware/auth.js";
+import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -22,12 +22,44 @@ const createCommentSchema = z.object({
   parentId: z.string().optional(),
 });
 
-router.get("/posts", async (req, res) => {
+router.get("/posts", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
+    const user = req.user!;
+    const schoolId = user.schoolId!;
+    
+    // 🔐 STRICT TENANT ISOLATION - Validate school access
+    if (!validateTenantAccess(schoolId, user.schoolId!)) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
+    }
+    
     const category = req.query.category as string | undefined;
     const limit = Math.min(parseInt(String(req.query.limit || "50"), 10), 100);
 
-    const conditions = category ? [eq(posts.category, category)] : [];
+    // 🔐 ROLE-BASED VISIBILITY RULES
+    let visibilityConditions = [];
+    
+    // Public posts are visible to everyone
+    visibilityConditions.push(eq(posts.visibility, "public"));
+    
+    // School-wide posts visible only to authenticated users in same school
+    if (user.schoolId) {
+      visibilityConditions.push(eq(posts.visibility, "school"));
+    }
+    
+    // Class-specific posts (would need class filtering logic)
+    if (user.role === "student" || user.role === "employee") {
+      visibilityConditions.push(eq(posts.visibility, "class"));
+    }
+    
+    const conditions = [];
+    if (category) {
+      conditions.push(eq(posts.category, category));
+    }
+    
+    // Add tenant isolation and visibility filtering
+    conditions.push(
+      sql`(${posts.visibility} = 'public' OR (${posts.visibility} = 'school' AND ${posts.schoolId} = ${schoolId}))`
+    );
     const baseQuery = db
       .select({
         id: posts.id,
@@ -49,12 +81,11 @@ router.get("/posts", async (req, res) => {
       .from(posts)
       .leftJoin(users, eq(posts.authorId, users.id))
       .leftJoin(schools, eq(posts.schoolId, schools.id))
+      .where(and(...conditions))
       .orderBy(desc(posts.createdAt))
       .limit(limit);
 
-    const rows = conditions.length
-      ? await baseQuery.where(conditions[0])
-      : await baseQuery;
+    const rows = await baseQuery;
 
     const postIds = rows.map((p) => p.id);
     const commentsList =
@@ -63,11 +94,11 @@ router.get("/posts", async (req, res) => {
         : [];
     const commentsByPost: Record<string, typeof commentsList> = {};
     for (const c of commentsList) {
-      if (!commentsByPost[c.postId]) commentsByPost[c.postId] = [];
-      commentsByPost[c.postId].push(c);
+      const arr = commentsByPost[c.postId] ?? (commentsByPost[c.postId] = []);
+      arr.push(c);
     }
 
-    const authorIds = [...new Set(commentsList.map((c) => c.authorId))];
+    const authorIds = Array.from(new Set(commentsList.map((c) => c.authorId)));
     const authors =
       authorIds.length > 0
         ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, authorIds))
@@ -100,13 +131,29 @@ router.get("/posts", async (req, res) => {
   }
 });
 
-router.post("/posts", requireAuth, async (req: AuthRequest, res) => {
+router.post("/posts", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
+    const user = req.user!;
+    const schoolId = user.schoolId!;
+    
+    // 🔐 STRICT TENANT ISOLATION - Validate school access
+    if (!validateTenantAccess(schoolId, user.schoolId!)) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
+    }
+    
     const body = createPostSchema.parse(req.body);
-    const schoolId = req.user!.schoolId ?? null;
     const wantsSchoolAuthor = !!body.postedAsSchool;
-    const canPostAsSchool = (req.user!.role === "admin" || req.user!.role === "employee") && !!schoolId;
+    const canPostAsSchool = (user.role === "admin" || user.role === "employee") && !!schoolId;
     const postedAsSchool = wantsSchoolAuthor && canPostAsSchool;
+
+    // 🔐 ROLE-BASED POSTING VALIDATION
+    if (body.visibility === "school" && !schoolId) {
+      return res.status(403).json({ message: "School-wide posts require school affiliation" });
+    }
+    
+    if (body.visibility === "class" && (user.role !== "student" && user.role !== "employee")) {
+      return res.status(403).json({ message: "Class posts only available to students and staff" });
+    }
 
     const [post] = await db
       .insert(posts)
@@ -145,6 +192,7 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res) => {
 router.post("/posts/:id/like", requireAuth, async (req: AuthRequest, res) => {
   const postId = req.params.id;
   const userId = req.user!.id;
+  if (!postId) return res.status(400).json({ message: "Post ID required" });
   try {
     const [existing] = await db
       .select()
@@ -172,12 +220,14 @@ router.post("/posts/:id/like", requireAuth, async (req: AuthRequest, res) => {
 });
 
 router.post("/posts/:id/comments", requireAuth, async (req: AuthRequest, res) => {
+  const postId = req.params.id;
+  if (!postId) return res.status(400).json({ message: "Post ID required" });
   try {
     const body = createCommentSchema.parse(req.body);
     const [comment] = await db
       .insert(comments)
       .values({
-        postId: req.params.id,
+        postId,
         authorId: req.user!.id,
         content: body.content,
         parentId: body.parentId ?? null,

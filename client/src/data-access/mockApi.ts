@@ -78,10 +78,11 @@ export const mockApi = {
       await delay();
       
       const userIndex = mockUsers.findIndex(u => u.id === userId);
-      if (userIndex !== -1) {
-        const currentPassword = mockUsers[userIndex].password;
-        const updatedUser = { ...mockUsers[userIndex], ...updates, password: currentPassword };
-        mockUsers[userIndex] = updatedUser;
+      const current = userIndex > -1 ? mockUsers[userIndex] : undefined;
+      if (current) {
+        const currentPassword = current.password;
+        const updatedUser = { ...current, ...updates, password: currentPassword };
+        mockUsers[userIndex!] = updatedUser;
         saveUsers(mockUsers);
         
         const { password: _, ...userWithoutPassword } = updatedUser;

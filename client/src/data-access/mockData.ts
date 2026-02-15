@@ -16,6 +16,7 @@ export interface User {
   verified: boolean;
   schoolLinked: boolean;
   password?: string;
+  onboardingCompletedAt?: string | null;
 }
 
 export interface Student extends User {

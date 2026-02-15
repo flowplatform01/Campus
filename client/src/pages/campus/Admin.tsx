@@ -11,6 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function CampusAdminSetupPage() {
   useRequireAuth(['admin']);
   const qc = useQueryClient();
@@ -28,6 +30,8 @@ export default function CampusAdminSetupPage() {
     phone: '',
     email: '',
   });
+
+  const [logoUploading, setLogoUploading] = useState(false);
 
   useEffect(() => {
     if (!schoolProfile) return;
@@ -56,6 +60,43 @@ export default function CampusAdminSetupPage() {
     },
     onError: (e: any) => toast({ title: 'Failed to update', description: e?.message || 'Error', variant: 'destructive' }),
   });
+
+  const uploadLogo = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Invalid file', description: 'Please select an image file', variant: 'destructive' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Max 5MB', variant: 'destructive' });
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${API_BASE}/api/upload/school-logo`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || 'Upload failed');
+      if (!data?.url) throw new Error('Upload did not return a URL');
+
+      await api.sms.school.update({ logoUrl: data.url });
+      await qc.invalidateQueries({ queryKey: ['sms-school'] });
+      setBrandingForm((prev) => ({ ...prev, logoUrl: data.url }));
+      toast({ title: 'Logo updated' });
+    } catch (e: any) {
+      toast({ title: 'Logo upload failed', description: e?.message || 'Error', variant: 'destructive' });
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   const { data: academicYears, isLoading: yearsLoading } = useQuery({
     queryKey: ['sms-academic-years'],
@@ -763,11 +804,18 @@ export default function CampusAdminSetupPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Logo URL</Label>
+                  <Label>School Logo</Label>
                   <Input
-                    value={brandingForm.logoUrl || schoolProfile?.logoUrl || ''}
-                    onChange={(e) => setBrandingForm({ ...brandingForm, logoUrl: e.target.value })}
+                    type="file"
+                    accept="image/*"
+                    disabled={logoUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadLogo(file);
+                      e.currentTarget.value = '';
+                    }}
                   />
+                  <Input value={brandingForm.logoUrl || schoolProfile?.logoUrl || ''} readOnly />
                 </div>
                 <div className="grid gap-2">
                   <Label>Address</Label>

@@ -51,23 +51,36 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="lg:flex">
         <AnimatePresence>
           {(sidebarOpen || window.innerWidth >= 1024) && isCampusMode && (
-            <motion.aside
-              initial={{ x: -300 }}
-              animate={{ x: 0 }}
-              exit={{ x: -300 }}
-              className="fixed inset-y-0 left-0 z-50 w-64 bg-card border-r lg:static lg:z-0"
-            >
-              <div className="flex items-center justify-end p-2 lg:hidden">
-                <Button
-                  variant="ghost"
-                  size="icon"
+            <>
+              {/* Mobile backdrop overlay */}
+              {sidebarOpen && window.innerWidth < 1024 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-40 bg-black/50 lg:hidden"
                   onClick={() => setSidebarOpen(false)}
-                >
-                  <X className="w-5 h-5" />
-                </Button>
-              </div>
-              <DynamicSidebar />
-            </motion.aside>
+                />
+              )}
+              <motion.aside
+                initial={{ x: -300 }}
+                animate={{ x: 0 }}
+                exit={{ x: -300 }}
+                className="fixed inset-y-0 left-0 z-50 w-64 bg-card border-r lg:static lg:z-0"
+              >
+                <div className="flex items-center justify-end p-2 lg:hidden relative z-50">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSidebarOpen(false)}
+                    className="touch-manipulation"
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
+                <DynamicSidebar />
+              </motion.aside>
+            </>
           )}
         </AnimatePresence>
 

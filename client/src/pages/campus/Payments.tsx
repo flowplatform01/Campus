@@ -20,22 +20,81 @@ export default function CampusPaymentsPage() {
 
   const isStaff = user?.role === 'admin' || user?.role === 'employee';
 
-  const { data: feeHeads } = useQuery({ queryKey: ['sms-fee-heads'], queryFn: api.sms.payments.feeHeads.list, enabled: isStaff });
-  const { data: invoices, isLoading } = useQuery({ queryKey: ['sms-invoices'], queryFn: api.sms.payments.invoices.list });
-  const { data: settings } = useQuery({ queryKey: ['sms-payment-settings'], queryFn: api.sms.payments.settings.get, enabled: user?.role === 'admin' });
-
-  const { data: users } = useQuery({ queryKey: ['users'], queryFn: api.users.list, enabled: isStaff });
-  const students = useMemo(() => (users || []).filter((u: any) => u.role === 'student'), [users]);
-
   const [feeHeadForm, setFeeHeadForm] = useState({ name: '', code: '' });
   const [invoiceForm, setInvoiceForm] = useState({
     studentId: '',
+    classId: '',
+    sectionId: '',
     dueAt: '',
     notes: '',
     feeHeadId: '',
     description: '',
     amount: 0,
   });
+
+  const [bulkAllInClass, setBulkAllInClass] = useState(false);
+
+  const { data: feeHeads } = useQuery({ queryKey: ['sms-fee-heads'], queryFn: () => api.sms.payments.feeHeads.list(), enabled: isStaff });
+  const { data: invoices, isLoading } = useQuery({ queryKey: ['sms-invoices'], queryFn: () => api.sms.payments.invoices.list() });
+  const { data: settings } = useQuery({ queryKey: ['sms-payment-settings'], queryFn: () => api.sms.payments.settings.get(), enabled: user?.role === 'admin' });
+
+  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list, enabled: isStaff });
+  const { data: sections } = useQuery({
+    queryKey: ['sms-sections', invoiceForm.classId],
+    queryFn: () => api.sms.sections.list(invoiceForm.classId || undefined),
+    enabled: isStaff && !!invoiceForm.classId,
+  });
+
+  const [classSearch, setClassSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+
+  const { data: rosterStudents } = useQuery({
+    queryKey: ['sms-attendance-roster', invoiceForm.classId, invoiceForm.sectionId],
+    queryFn: async () => {
+      const years = await api.sms.academicYears.list();
+      const active = (years || []).find((y: any) => y.isActive) ?? years?.[0];
+      if (!active?.id) return [];
+      return api.sms.attendance.roster({
+        academicYearId: active.id,
+        classId: invoiceForm.classId,
+        sectionId: invoiceForm.sectionId || undefined,
+      });
+    },
+    enabled: isStaff && !!invoiceForm.classId,
+  });
+
+  const rosterFlatStudents = useMemo(() => {
+    return (rosterStudents || [])
+      .map((r: any) => {
+        const s = r?.student;
+        if (!s?.id) return null;
+        return {
+          id: s.id,
+          name: s.name,
+          studentId: s.studentId,
+          enrollmentId: r.enrollmentId,
+        };
+      })
+      .filter(Boolean);
+  }, [rosterStudents]);
+
+  const filteredClasses = useMemo(() => {
+    const q = classSearch.trim().toLowerCase();
+    const list = classes || [];
+    if (!q) return list;
+    return list.filter((c: any) => String(c.name || '').toLowerCase().includes(q));
+  }, [classes, classSearch]);
+
+  const filteredRosterStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    const list = rosterFlatStudents as any[];
+    if (!q) return list;
+    return list.filter((s: any) => {
+      const name = String(s.name || '').toLowerCase();
+      const studentId = String(s.studentId || '').toLowerCase();
+      return name.includes(q) || studentId.includes(q);
+    });
+  }, [rosterFlatStudents, studentSearch]);
 
   const createFeeHead = useMutation({
     mutationFn: () => api.sms.payments.feeHeads.create({ name: feeHeadForm.name, code: feeHeadForm.code || undefined }),
@@ -48,22 +107,36 @@ export default function CampusPaymentsPage() {
   });
 
   const createInvoice = useMutation({
-    mutationFn: () =>
-      api.sms.payments.invoices.create({
+    mutationFn: () => {
+      const lines = [
+        {
+          feeHeadId: invoiceForm.feeHeadId || undefined,
+          description: invoiceForm.description || 'Fee',
+          amount: Number(invoiceForm.amount),
+        },
+      ];
+
+      if (bulkAllInClass) {
+        const studentIds = (rosterFlatStudents || []).map((s: any) => s.id).filter(Boolean);
+        return api.sms.payments.invoices.bulkCreate({
+          studentIds,
+          dueAt: invoiceForm.dueAt ? new Date(invoiceForm.dueAt).toISOString() : undefined,
+          notes: invoiceForm.notes || undefined,
+          lines,
+        });
+      }
+
+      return api.sms.payments.invoices.create({
         studentId: invoiceForm.studentId,
         dueAt: invoiceForm.dueAt ? new Date(invoiceForm.dueAt).toISOString() : undefined,
         notes: invoiceForm.notes || undefined,
-        lines: [
-          {
-            feeHeadId: invoiceForm.feeHeadId || undefined,
-            description: invoiceForm.description || 'Fee',
-            amount: Number(invoiceForm.amount),
-          },
-        ],
-      }),
+        lines,
+      });
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['sms-invoices'] });
-      setInvoiceForm({ studentId: '', dueAt: '', notes: '', feeHeadId: '', description: '', amount: 0 });
+      setInvoiceForm({ studentId: '', classId: '', sectionId: '', dueAt: '', notes: '', feeHeadId: '', description: '', amount: 0 });
+      setBulkAllInClass(false);
       toast({ title: 'Invoice created' });
     },
     onError: (e: any) => toast({ title: 'Failed', description: e?.message || 'Error', variant: 'destructive' }),
@@ -80,7 +153,7 @@ export default function CampusPaymentsPage() {
     onError: (e: any) => toast({ title: 'Failed', description: e?.message || 'Error', variant: 'destructive' }),
   });
 
-  const { data: expenses } = useQuery({ queryKey: ['expenses'], queryFn: api.expenses.list, enabled: user?.role === 'admin' });
+  const { data: expenses } = useQuery({ queryKey: ['expenses'], queryFn: () => api.expenses.list(), enabled: user?.role === 'admin' });
 
   return (
     <DashboardLayout>
@@ -109,16 +182,75 @@ export default function CampusPaymentsPage() {
                   </CardHeader>
                   <CardContent className="grid gap-4">
                     <div className="grid gap-2">
+                      <Label>Class</Label>
+                      <Input
+                        placeholder="Search class..."
+                        value={classSearch}
+                        onChange={(e) => setClassSearch(e.target.value)}
+                      />
+                      <select
+                        value={invoiceForm.classId}
+                        onChange={(e) => setInvoiceForm({ ...invoiceForm, classId: e.target.value, sectionId: '', studentId: '' })}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">Select class first</option>
+                        {(filteredClasses || []).map((c: any) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Section (optional)</Label>
+                      <select
+                        value={invoiceForm.sectionId}
+                        onChange={(e) => setInvoiceForm({ ...invoiceForm, sectionId: e.target.value, studentId: '' })}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        disabled={!invoiceForm.classId}
+                      >
+                        <option value="">All sections</option>
+                        {(sections || []).map((sec: any) => (
+                          <option key={sec.id} value={sec.id}>{sec.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="bulkAll"
+                        type="checkbox"
+                        checked={bulkAllInClass}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setBulkAllInClass(checked);
+                          if (checked) {
+                            setInvoiceForm({ ...invoiceForm, studentId: '' });
+                          }
+                        }}
+                      />
+                      <Label htmlFor="bulkAll">Select all students in this class</Label>
+                    </div>
+
+                    <div className="grid gap-2">
                       <Label>Student</Label>
+                      <Input
+                        placeholder="Search student..."
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        disabled={!invoiceForm.classId || bulkAllInClass}
+                      />
                       <select
                         value={invoiceForm.studentId}
                         onChange={(e) => setInvoiceForm({ ...invoiceForm, studentId: e.target.value })}
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        disabled={!invoiceForm.classId || bulkAllInClass}
                       >
                         <option value="">Select student</option>
-                        {students.map((s: any) => (
+                        {invoiceForm.classId && filteredRosterStudents?.map((s: any) => (
                           <option key={s.id} value={s.id}>
-                            {s.name} ({s.studentId || s.email})
+                            {s.name} ({s.studentId || s.id})
                           </option>
                         ))}
                       </select>
@@ -160,7 +292,15 @@ export default function CampusPaymentsPage() {
                       <Input value={invoiceForm.notes} onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })} />
                     </div>
 
-                    <Button onClick={() => createInvoice.mutate()} disabled={!invoiceForm.studentId || !invoiceForm.amount || createInvoice.isPending}>
+                    <Button
+                      onClick={() => createInvoice.mutate()}
+                      disabled={
+                        (!bulkAllInClass && !invoiceForm.studentId) ||
+                        (bulkAllInClass && (rosterStudents || []).length === 0) ||
+                        !invoiceForm.amount ||
+                        createInvoice.isPending
+                      }
+                    >
                       {createInvoice.isPending ? 'Creating...' : 'Create Invoice'}
                     </Button>
                   </CardContent>

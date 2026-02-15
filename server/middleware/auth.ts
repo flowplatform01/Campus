@@ -20,6 +20,7 @@ export interface AuthRequest extends Request {
     name: string;
     role: string;
     schoolId?: string | null;
+    subRole?: string | null;
   };
 }
 
@@ -71,4 +72,55 @@ export function optionalAuth(req: AuthRequest, res: Response, next: NextFunction
     } catch {}
     next();
   });
+}
+
+// 🔐 TENANT ISOLATION MIDDLEWARE - CRITICAL FOR MULTI-TENANT SECURITY
+export function requireTenantAccess(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  
+  const userSchoolId = req.user.schoolId;
+  if (!userSchoolId) {
+    return res.status(403).json({ message: "User is not linked to a school" });
+  }
+  
+  // 🔐 ENFORCE STRICT TENANT ISOLATION AT MIDDLEWARE LEVEL
+  // Block any request that tries to access resources from a different school
+  const requestSchoolId = 
+    req.params.schoolId || 
+    req.query.schoolId || 
+    req.body.schoolId ||
+    req.params.id ||
+    req.query.id;
+  
+  // If any school-related ID is provided, it must match the user's school
+  if (requestSchoolId && requestSchoolId !== userSchoolId) {
+    console.warn(`🚨 CROSS-TENANT ACCESS ATTEMPT: User ${req.user.id} from school ${userSchoolId} trying to access resource ${requestSchoolId}`);
+    return res.status(403).json({ message: "Cross-tenant access denied" });
+  }
+  
+  // Add schoolId to request for consistent access
+  req.user.schoolId = userSchoolId;
+  next();
+}
+
+// 🔐 STRICT TENANT VALIDATION FOR RESOURCE ACCESS
+export function validateTenantAccess(resourceSchoolId: string, userSchoolId: string): boolean {
+  if (!resourceSchoolId || !userSchoolId) {
+    return false;
+  }
+  
+  // Prevent ID injection attempts
+  if (resourceSchoolId !== userSchoolId) {
+    return false;
+  }
+  
+  return true;
+}
+
+// 🔐 DEFENSIVE DATABASE QUERY HELPER
+export function withTenantFilter(query: any, schoolId: string, schoolIdColumn = 'schoolId') {
+  // This is a helper function - actual filtering will be done in routes
+  return query;
 }

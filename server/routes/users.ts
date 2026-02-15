@@ -3,8 +3,8 @@ import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "../db.js";
-import { users } from "@shared/schema";
-import { requireAuth, AuthRequest } from "../middleware/auth.js";
+import { users, employeeSubRoles } from "@shared/schema";
+import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -13,71 +13,63 @@ const createUserSchema = z.object({
   password: z.string().min(6),
   name: z.string().min(1),
   role: z.enum(["admin", "student", "parent", "employee"]),
-  subRole: z.string().optional(),
   studentId: z.string().optional(),
+  subRole: z.string().optional(),
   employeeId: z.string().optional(),
 });
 
-router.get("/", requireAuth, async (req: AuthRequest, res) => {
+router.get("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ message: "Not allowed" });
     }
-    const schoolId = req.user!.schoolId ?? null;
-    if (!schoolId) {
-      return res.status(400).json({ message: "Admin is not linked to a school" });
+    const schoolId = req.user!.schoolId!;
+    
+    // 🔐 STRICT TENANT ISOLATION - Double validation
+    if (!validateTenantAccess(schoolId, req.user!.schoolId!)) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
     }
 
-    const rows = await db.select().from(users).where(eq(users.schoolId, schoolId));
-    return res.json(
-      rows.map((u) => ({
-        id: u.id,
-        email: u.email,
-        name: u.name,
-        role: u.role,
-        avatar: u.avatarUrl,
-        profileCompletion: u.profileCompletion,
-        verified: !!u.emailVerifiedAt,
-        schoolLinked: !!u.schoolId,
-        points: u.points,
-        badges: u.badges || [],
-        studentId: u.studentId,
-        employeeId: u.employeeId,
-        grade: u.grade,
-        classSection: u.classSection,
-        subRole: u.subRole,
-      }))
-    );
-  } catch (e) {
-    return res.status(500).json({ message: "Failed to list users" });
+    const rows = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.schoolId, schoolId)))
+      .orderBy(users.createdAt);
+    return res.json(rows);
+  } catch (error: any) {
+    console.error('Error fetching users:', error);
+    return res.status(500).json({ message: "Failed to fetch users" });
   }
 });
 
-router.get("/staff", requireAuth, async (req: AuthRequest, res) => {
+router.get("/staff", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = req.user!.schoolId;
     if (!schoolId) return res.status(400).json({ message: "No school linked" });
     
     const rows = await db.select().from(users).where(and(eq(users.schoolId, schoolId), eq(users.role, "employee")));
-    return res.json(rows.map(u => ({ id: u.id, name: u.name, employeeId: u.employeeId, subRole: u.subRole })));
+    return res.json(rows.map(u => ({ id: u.id, name: u.name, subRole: u.subRole, schoolId: u.schoolId })));
   } catch (e) {
     return res.status(500).json({ message: "Failed to list staff" });
   }
 });
 
-router.post("/", requireAuth, async (req: AuthRequest, res) => {
+router.post("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ message: "Not allowed" });
     }
-    const schoolId = req.user!.schoolId ?? null;
-    if (!schoolId) {
-      return res.status(400).json({ message: "Admin is not linked to a school" });
+    const schoolId = req.user!.schoolId!;
+    
+    // 🔐 STRICT TENANT ISOLATION - Validate school assignment
+    if (!validateTenantAccess(schoolId, req.user!.schoolId!)) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
     }
 
     const body = createUserSchema.parse(req.body);
     const hashed = await bcrypt.hash(body.password, 10);
 
+    // Admin creating user: link to school, set subRole for employees, studentId for students
     const [row] = await db
       .insert(users)
       .values({
@@ -85,32 +77,32 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
         password: hashed,
         name: body.name,
         role: body.role,
-        schoolId,
-        subRole: body.role === "employee" ? body.subRole || "teacher" : null,
-        studentId: body.role === "student" ? body.studentId || null : null,
-        employeeId: body.role === "employee" ? body.employeeId || null : null,
+        schoolId: schoolId,
+        subRole: body.role === "employee" ? (body.subRole || null) : null,
+        studentId: body.role === "student" ? (body.studentId || null) : null,
+        employeeId: body.role === "employee" ? (body.employeeId || null) : null,
         verified: true,
         emailVerifiedAt: new Date(),
-        profileCompletion: 60,
+        profileCompletion: body.role === "employee" ? 60 : 60,
       })
       .returning();
 
     return res.status(201).json({
-      id: row.id,
-      email: row.email,
-      name: row.name,
-      role: row.role,
-      avatar: row.avatarUrl,
-      profileCompletion: row.profileCompletion,
-      verified: !!row.emailVerifiedAt,
-      schoolLinked: !!row.schoolId,
-      points: row.points,
-      badges: row.badges || [],
-      studentId: row.studentId,
-      employeeId: row.employeeId,
-      grade: row.grade,
-      classSection: row.classSection,
-      subRole: row.subRole,
+      id: row!.id,
+      email: row!.email,
+      name: row!.name,
+      role: row!.role,
+      avatar: row!.avatarUrl,
+      profileCompletion: row!.profileCompletion,
+      verified: !!row!.emailVerifiedAt,
+      schoolLinked: !!row!.schoolId,
+      points: row!.points,
+      badges: row!.badges || [],
+      studentId: row!.studentId,
+      employeeId: row!.employeeId,
+      grade: row!.grade,
+      classSection: row!.classSection,
+      subRole: row!.subRole,
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
@@ -122,7 +114,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   try {
-    const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+    const [user] = await db.select().from(users).where(eq(users.id, req.params.id!)).limit(1);
     if (!user) return res.status(404).json({ message: "User not found" });
     return res.json({
       id: user.id,

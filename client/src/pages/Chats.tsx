@@ -112,7 +112,7 @@ export default function Chats() {
                         <div className="flex items-start gap-3">
                           <Avatar>
                             <AvatarFallback>
-                              {chat.avatar || (chat.name ? chat.name.charAt(0) : chat.participantNames[0].charAt(0))}
+                              {chat.avatar || (chat.name ? chat.name.charAt(0) : chat.participantNames?.[0]?.charAt(0) || '?')}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
@@ -154,7 +154,7 @@ export default function Chats() {
                         {selectedConversation.avatar || 
                          (selectedConversation.name 
                            ? selectedConversation.name.charAt(0) 
-                           : selectedConversation.participantNames[0].charAt(0))}
+                           : selectedConversation.participantNames?.[0]?.charAt(0) || '?')}
                       </AvatarFallback>
                     </Avatar>
                     <div>
@@ -176,7 +176,7 @@ export default function Chats() {
                     <div className="flex items-start gap-3">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback>
-                          {selectedConversation.participantNames[0].charAt(0)}
+                          {selectedConversation.participantNames?.[0]?.charAt(0) || '?'}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1">

@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function CampusAssignmentsPage() {
   const { user } = useRequireAuth();
@@ -20,10 +22,11 @@ export default function CampusAssignmentsPage() {
   const isStaff = user?.role === 'admin' || user?.role === 'employee';
 
   const [scope, setScope] = useState({ termId: '', classId: '', sectionId: '' });
-  const [createForm, setCreateForm] = useState({ subjectId: '', title: '', instructions: '', dueAt: '', maxScore: 100, attachmentUrl: '' });
+  const [createForm, setCreateForm] = useState({ subjectId: '', title: '', instructions: '', dueAt: '', maxScore: 100, attachmentFile: null as File | null });
   const [submitState, setSubmitState] = useState<{ assignmentId: string; submissionUrl: string; submissionText: string } | null>(null);
   const [reviewAssignmentId, setReviewAssignmentId] = useState<string>('');
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { score: number; feedback: string }>>({});
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   const { data: years } = useQuery({ queryKey: ['sms-academic-years'], queryFn: api.sms.academicYears.list });
   const activeYear = useMemo(() => (years || []).find((y: any) => y.isActive) ?? null, [years]);
@@ -48,9 +51,9 @@ export default function CampusAssignmentsPage() {
     },
     onError: (e: any) => toast({ title: 'Failed to review', description: e?.message || 'Error', variant: 'destructive' }),
   });
-  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
-  const { data: sections } = useQuery({ queryKey: ['sms-sections'], queryFn: api.sms.sections.list });
-  const { data: subjects } = useQuery({ queryKey: ['sms-subjects'], queryFn: api.sms.subjects.list });
+  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: () => api.sms.classes.list() });
+  const { data: sections } = useQuery({ queryKey: ['sms-sections'], queryFn: () => api.sms.sections.list() });
+  const { data: subjects } = useQuery({ queryKey: ['sms-subjects'], queryFn: () => api.sms.subjects.list() });
 
   const subjectNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -60,12 +63,36 @@ export default function CampusAssignmentsPage() {
 
   const { data: assignments, isLoading } = useQuery({
     queryKey: ['sms-assignments', scope.termId || null],
-    queryFn: () => api.sms.assignments.list(isStaff ? { academicYearId: activeYear?.id, termId: scope.termId || undefined } : undefined),
+    queryFn: () => api.sms.assignments.list(isStaff ? { academicYearId: activeYear?.id, termId: scope.termId } : {}),
   });
 
   const createAssignment = useMutation({
-    mutationFn: () =>
-      api.sms.assignments.create({
+    mutationFn: async () => {
+      let attachmentUrl: string | undefined;
+      
+      // Upload file if selected
+      if (createForm.attachmentFile) {
+        const formData = new FormData();
+        formData.append('file', createForm.attachmentFile);
+        formData.append('assetType', 'assignment_attachment');
+        
+        const uploadResponse = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('campus_access_token')}`
+          },
+          body: formData
+        });
+        
+        if (!uploadResponse.ok) {
+          throw new Error('File upload failed');
+        }
+        
+        const uploadResult = await uploadResponse.json();
+        attachmentUrl = uploadResult.url;
+      }
+      
+      return api.sms.assignments.create({
         academicYearId: activeYear!.id,
         termId: scope.termId,
         classId: scope.classId,
@@ -75,11 +102,12 @@ export default function CampusAssignmentsPage() {
         instructions: createForm.instructions,
         dueAt: new Date(createForm.dueAt).toISOString(),
         maxScore: Number(createForm.maxScore),
-        attachmentUrl: createForm.attachmentUrl || undefined,
-      }),
+        attachmentUrl,
+      });
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['sms-assignments'] });
-      setCreateForm({ subjectId: '', title: '', instructions: '', dueAt: '', maxScore: 100, attachmentUrl: '' });
+      setCreateForm({ subjectId: '', title: '', instructions: '', dueAt: '', maxScore: 100, attachmentFile: null });
       toast({ title: 'Draft created' });
     },
     onError: (e: any) => toast({ title: 'Failed to create', description: e?.message || 'Error', variant: 'destructive' }),
@@ -203,8 +231,18 @@ export default function CampusAssignmentsPage() {
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Attachment URL (optional)</Label>
-                  <Input value={createForm.attachmentUrl} onChange={(e) => setCreateForm({ ...createForm, attachmentUrl: e.target.value })} />
+                  <Label>Attachment File (optional)</Label>
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    onChange={(e) => setCreateForm({ ...createForm, attachmentFile: e.target.files?.[0] || null })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                  {createForm.attachmentFile && (
+                    <p className="text-sm text-muted-foreground">
+                      Selected: {createForm.attachmentFile.name}
+                    </p>
+                  )}
                 </div>
                 <Button
                   onClick={() => createAssignment.mutate()}

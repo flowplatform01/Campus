@@ -104,6 +104,7 @@ router.post("/register", async (req, res) => {
         profileCompletion: user.profileCompletion,
         verified: !!user.emailVerifiedAt,
         schoolLinked: !!user.schoolId,
+        schoolId: user.schoolId,
         avatar: user.avatarUrl,
         points: user.points,
         badges: user.badges || [],
@@ -126,10 +127,23 @@ router.post("/register", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   try {
+    console.log(`[Auth] Login attempt for:`, req.body.email);
     const body = loginSchema.parse(req.body);
+    console.log(`[Auth] Parsed body:`, { email: body.email, hasPassword: !!body.password });
+    
     const [user] = await db.select().from(users).where(eq(users.email, body.email)).limit(1);
-    if (!user || !(await bcrypt.compare(body.password, user.password))) {
-      console.log(`[Auth] Login failed for ${body.email}: ${!user ? 'User not found' : 'Invalid password'}`);
+    console.log(`[Auth] User found:`, !!user, user ? { id: user.id, email: user.email, hasPassword: !!user.password } : null);
+    
+    if (!user) {
+      console.log(`[Auth] Login failed for ${body.email}: User not found`);
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+    
+    const passwordMatch = await bcrypt.compare(body.password, user.password);
+    console.log(`[Auth] Password match:`, passwordMatch);
+    
+    if (!passwordMatch) {
+      console.log(`[Auth] Login failed for ${body.email}: Invalid password`);
       return res.status(401).json({ message: "Invalid email or password" });
     }
     const { access, refresh } = createTokens(user.id, user.email, user.role);
@@ -141,9 +155,11 @@ router.post("/login", async (req, res) => {
         profileCompletion: user.profileCompletion,
         verified: !!user.emailVerifiedAt,
         schoolLinked: !!user.schoolId,
+        schoolId: user.schoolId,
         avatar: user.avatarUrl,
         points: user.points,
         badges: user.badges || [],
+        onboardingCompletedAt: user.onboardingCompletedAt,
     };
     return res.json({
       user: userResponse,
@@ -264,10 +280,24 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
     profileCompletion: user.profileCompletion,
     verified: !!user.emailVerifiedAt,
     schoolLinked: !!user.schoolId,
+    schoolId: user.schoolId,
     avatar: user.avatarUrl,
     points: user.points,
     badges: user.badges || [],
+    onboardingCompletedAt: user.onboardingCompletedAt,
   });
+});
+
+router.patch("/me/onboarding-complete", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    await db
+      .update(users)
+      .set({ onboardingCompletedAt: new Date(), profileCompletion: 100, updatedAt: new Date() })
+      .where(eq(users.id, req.user!.id));
+    return res.json({ message: "Onboarding completed" });
+  } catch (e) {
+    return res.status(500).json({ message: "Failed to update onboarding" });
+  }
 });
 
 export default router;

@@ -10,6 +10,14 @@ import communitiesRoutes from "./communities.js";
 import usersRoutes from "./users.js";
 import announcementsRoutes from "./announcements.js";
 import smsRoutes from "./sms.js";
+import exportRoutes from "./export.js";
+import brandingRoutes from "./branding.js";
+import analyticsRoutes from "./analytics.js";
+import healthRoutes from "./health.js";
+import enrollmentRoutes from "./enrollment.js";
+import parentStudentLinkingRoutes from "./parent-student-linking.js";
+import teacherClassLinkingRoutes from "./teacher-class-linking.js";
+import logicHardeningRoutes from "./logic-hardening.js";
 import { config } from "../config.js";
 import { setupSocket } from "../socket.js";
 
@@ -25,6 +33,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/communities", communitiesRoutes);
   app.use("/api/users", usersRoutes);
   app.use("/api/sms", smsRoutes);
+  app.use("/api/export", exportRoutes);
+  app.use("/api/branding", brandingRoutes);
+  app.use("/api/analytics", analyticsRoutes);
+  app.use("/api/health", healthRoutes);
+  app.use("/api/enrollment", enrollmentRoutes);
+  app.use("/api/relationships/parent-student", parentStudentLinkingRoutes);
+  app.use("/api/relationships/teacher-class", teacherClassLinkingRoutes);
+  app.use("/api/hardening", logicHardeningRoutes);
 
   const httpServer = createServer(app);
   setupSocket(httpServer);

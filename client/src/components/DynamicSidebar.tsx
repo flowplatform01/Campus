@@ -35,6 +35,18 @@ export function DynamicSidebar() {
       path: `/dashboard/${user?.role}`,
       permission: 'view_dashboard'
     },
+    {
+      icon: UserCheck,
+      label: 'Enrollment',
+      path:
+        user?.role === 'admin'
+          ? '/enrollment/admin'
+          : user?.role === 'student'
+            ? '/enrollment/student'
+            : user?.role === 'parent'
+              ? '/enrollment/parent'
+              : '/enrollment/employee',
+    },
     { 
       icon: Users, 
       label: 'Users', 

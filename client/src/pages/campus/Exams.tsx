@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Edit, ListChecks } from 'lucide-react';
+import { Plus, Edit, ListChecks, Database, Users } from 'lucide-react';
 import { queryClient } from '@/lib/queryClient';
 
 export default function CampusExamsPage() {
@@ -62,6 +62,92 @@ export default function CampusExamsPage() {
     queryKey: ['sms-exam-marks', selectedExamForMarks?.id],
     queryFn: () => api.sms.exams.getMarks(selectedExamForMarks!.id),
     enabled: !!selectedExamForMarks?.id
+  });
+
+  const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
+  const { data: subjects } = useQuery({ queryKey: ['sms-subjects'], queryFn: api.sms.subjects.list, enabled: isStaff });
+
+  const [marksEntry, setMarksEntry] = useState({ classId: '', sectionId: '', subjectId: '', totalMarks: '100' });
+
+  const { data: rosterRows, isLoading: isLoadingRoster } = useQuery({
+    queryKey: ['sms-attendance-roster', activeYear?.id, marksEntry.classId, marksEntry.sectionId],
+    queryFn: () =>
+      api.sms.attendance.roster({
+        academicYearId: activeYear!.id,
+        classId: marksEntry.classId,
+        sectionId: marksEntry.sectionId || undefined,
+      }),
+    enabled: !!activeYear?.id && !!marksEntry.classId && isStaff,
+  });
+
+  const rosterStudents = useMemo(() => {
+    return (rosterRows || [])
+      .map((r: any) => r?.student)
+      .filter((s: any) => !!s?.id);
+  }, [rosterRows]);
+
+  const existingMarksMap = useMemo(() => {
+    const out = new Map<string, any>();
+    const subjectId = marksEntry.subjectId;
+    if (!subjectId) return out;
+    for (const m of marks || []) {
+      if (!m?.studentId) continue;
+      if (String(m.subjectId) !== String(subjectId)) continue;
+      out.set(String(m.studentId), m);
+    }
+    return out;
+  }, [marks, marksEntry.subjectId]);
+
+  const [draftMarks, setDraftMarks] = useState<Record<string, { marksObtained: string; remarks: string }>>({});
+
+  const saveMarks = useMutation({
+    mutationFn: async () => {
+      if (!selectedExamForMarks?.id) throw new Error('Select an exam');
+      if (!marksEntry.classId) throw new Error('Select a class');
+      if (!marksEntry.subjectId) throw new Error('Select a subject');
+      const totalMarks = Number(marksEntry.totalMarks);
+      if (!Number.isFinite(totalMarks) || totalMarks <= 0) throw new Error('Total marks must be a positive number');
+
+      const payload = rosterStudents.map((s: any) => {
+        const d = draftMarks[String(s.id)];
+        const existing = existingMarksMap.get(String(s.id));
+        const raw = d?.marksObtained ?? (existing?.marksObtained ?? '');
+        const parsed = raw === '' || raw === null || raw === undefined ? undefined : Number(raw);
+        return {
+          studentId: String(s.id),
+          subjectId: String(marksEntry.subjectId),
+          marksObtained: parsed,
+          totalMarks,
+          remarks: (d?.remarks ?? existing?.remarks ?? '') || undefined,
+        };
+      });
+
+      return api.sms.exams.saveMarks(selectedExamForMarks.id, payload);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sms-exam-marks', selectedExamForMarks?.id] });
+      toast({ title: 'Marks saved' });
+    },
+    onError: (e: any) => toast({ title: 'Failed to save marks', description: e?.message || 'Error', variant: 'destructive' }),
+  });
+
+  // Sample data creation mutations
+  const createSampleExams = useMutation({
+    mutationFn: () => api.sms.exams.createSampleData(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sms-exams'] });
+      toast({ title: 'Sample exams created', description: 'Sample exam records have been added successfully.' });
+    },
+    onError: (e: any) => toast({ title: 'Failed to create sample data', description: e.message, variant: 'destructive' })
+  });
+
+  const createSampleMarks = useMutation({
+    mutationFn: (examId: string) => api.sms.exams.createSampleMarks(examId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sms-exam-marks', selectedExamForMarks?.id] });
+      toast({ title: 'Sample marks created', description: 'Sample marks have been added to this exam.' });
+    },
+    onError: (e: any) => toast({ title: 'Failed to create sample marks', description: e.message, variant: 'destructive' })
   });
 
   return (
@@ -161,6 +247,9 @@ export default function CampusExamsPage() {
               <CardDescription>All scheduled and completed exams</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="mb-4">
+                <Input placeholder="Search exams..." className="max-w-md" />
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -216,10 +305,28 @@ export default function CampusExamsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Quick Links</CardTitle>
-              <CardDescription>Academic settings</CardDescription>
+              <CardTitle>Quick Actions</CardTitle>
+              <CardDescription>System management</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start gap-2" 
+                onClick={() => createSampleExams.mutate()}
+                disabled={createSampleExams.isPending}
+              >
+                <Database className="w-4 h-4" />
+                {createSampleExams.isPending ? 'Creating...' : 'Create Sample Exams'}
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full justify-start gap-2" 
+                onClick={() => selectedExamForMarks && createSampleMarks.mutate(selectedExamForMarks.id)}
+                disabled={!selectedExamForMarks || createSampleMarks.isPending}
+              >
+                <Users className="w-4 h-4" />
+                {createSampleMarks.isPending ? 'Creating...' : 'Add Sample Marks'}
+              </Button>
               <Button variant="outline" className="w-full justify-start gap-2" disabled>
                 <Edit className="w-4 h-4" />
                 Grade Scales
@@ -242,6 +349,124 @@ export default function CampusExamsPage() {
               <Button variant="ghost" onClick={() => setSelectedExamForMarks(null)}>Close</Button>
             </CardHeader>
             <CardContent>
+              {isStaff && (
+                <div className="space-y-4 mb-6">
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <div className="grid gap-2">
+                      <Label>Class</Label>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={marksEntry.classId}
+                        onChange={(e) => {
+                          setDraftMarks({});
+                          setMarksEntry({ ...marksEntry, classId: e.target.value, sectionId: '' });
+                        }}
+                      >
+                        <option value="">Select class</option>
+                        {(classes || []).map((c: any) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Subject</Label>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={marksEntry.subjectId}
+                        onChange={(e) => {
+                          setDraftMarks({});
+                          setMarksEntry({ ...marksEntry, subjectId: e.target.value });
+                        }}
+                        disabled={!marksEntry.classId}
+                      >
+                        <option value="">Select subject</option>
+                        {(subjects || []).map((s: any) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Total</Label>
+                      <Input
+                        value={marksEntry.totalMarks}
+                        onChange={(e) => setMarksEntry({ ...marksEntry, totalMarks: e.target.value })}
+                        placeholder="100"
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>&nbsp;</Label>
+                      <Button
+                        onClick={() => saveMarks.mutate()}
+                        disabled={saveMarks.isPending || !marksEntry.classId || !marksEntry.subjectId || rosterStudents.length === 0}
+                      >
+                        {saveMarks.isPending ? 'Saving...' : 'Save Marks'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {!marksEntry.classId ? (
+                    <div className="text-sm text-muted-foreground">Select a class to load students.</div>
+                  ) : !marksEntry.subjectId ? (
+                    <div className="text-sm text-muted-foreground">Select a subject to start entering marks.</div>
+                  ) : isLoadingRoster ? (
+                    <div className="text-sm text-muted-foreground">Loading class roster...</div>
+                  ) : rosterStudents.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No active students found for the selected class.</div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Student</TableHead>
+                          <TableHead className="w-32">Marks</TableHead>
+                          <TableHead>Remarks</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rosterStudents.map((s: any) => {
+                          const id = String(s.id);
+                          const existing = existingMarksMap.get(id);
+                          const d = draftMarks[id];
+                          const value = d?.marksObtained ?? (existing?.marksObtained ?? '');
+                          const remarks = d?.remarks ?? (existing?.remarks ?? '');
+                          return (
+                            <TableRow key={id}>
+                              <TableCell className="font-medium">{s.name} {s.studentId ? `(${s.studentId})` : ''}</TableCell>
+                              <TableCell>
+                                <Input
+                                  value={String(value ?? '')}
+                                  onChange={(e) =>
+                                    setDraftMarks((prev) => ({
+                                      ...prev,
+                                      [id]: { marksObtained: e.target.value, remarks: prev[id]?.remarks ?? String(remarks ?? '') },
+                                    }))
+                                  }
+                                  placeholder="0"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={String(remarks ?? '')}
+                                  onChange={(e) =>
+                                    setDraftMarks((prev) => ({
+                                      ...prev,
+                                      [id]: { marksObtained: prev[id]?.marksObtained ?? String(value ?? ''), remarks: e.target.value },
+                                    }))
+                                  }
+                                  placeholder="Optional"
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              )}
+
               {isLoadingMarks ? (
                 <div className="text-center py-8 text-muted-foreground">Loading marks...</div>
               ) : (marks || []).length === 0 ? (

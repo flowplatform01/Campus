@@ -40,6 +40,10 @@ import CampusStaffAttendancePage from "@/pages/campus/StaffAttendance";
 import CampusPromotionsPage from "@/pages/campus/Promotions";
 import CampusCertificatesPage from "@/pages/campus/Certificates";
 import CampusAdminSetupPage from "@/pages/campus/Admin";
+import StudentEnrollmentPage from "@/pages/enrollment/StudentEnrollment";
+import ParentEnrollmentPage from "@/pages/enrollment/ParentEnrollment";
+import EmployeeEnrollmentPage from "@/pages/enrollment/EmployeeEnrollment";
+import AdminEnrollmentPage from "@/pages/enrollment/AdminEnrollment";
 
 function ProtectedRoute({ component: Component, allowedRoles }: { component: any; allowedRoles?: string[] }) {
   const { user, isAuthenticated } = useAuth();
@@ -120,6 +124,18 @@ function Router() {
       
       <Route path="/campus/users">
         {() => <ProtectedRoute component={CampusUsersPage} allowedRoles={['admin']} />}
+      </Route>
+      <Route path="/enrollment/student">
+        {() => <ProtectedRoute component={StudentEnrollmentPage} allowedRoles={['student']} />}
+      </Route>
+      <Route path="/enrollment/parent">
+        {() => <ProtectedRoute component={ParentEnrollmentPage} allowedRoles={['parent']} />}
+      </Route>
+      <Route path="/enrollment/employee">
+        {() => <ProtectedRoute component={EmployeeEnrollmentPage} allowedRoles={['employee']} />}
+      </Route>
+      <Route path="/enrollment/admin">
+        {() => <ProtectedRoute component={AdminEnrollmentPage} allowedRoles={['admin']} />}
       </Route>
       <Route path="/campus/academics">
         {() => <ProtectedRoute component={CampusAcademicsPage} />}
