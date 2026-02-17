@@ -1,5 +1,7 @@
 import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { db } from "../db.js";
+import PDFDocument from "pdfkit";
+import { PassThrough } from "stream";
 import {
   // SMS Tables for comprehensive data
   smsAssignments,
@@ -18,13 +20,209 @@ import {
 
 // PDF Generation
 export async function generatePDFReport(data: any, type: string): Promise<Buffer> {
-  // Simple PDF generation using browser console methods
-  // In production, you'd use a proper PDF library like puppeteer or jsPDF
-  const html = generateHTMLReport(data, type);
-  
-  // For now, return a simple text-based report
-  const reportText = generateTextReport(data, type);
-  return Buffer.from(reportText, 'utf-8');
+  const doc = new PDFDocument({ size: "A4", margin: 40 });
+  const stream = new PassThrough();
+  const chunks: Buffer[] = [];
+
+  doc.pipe(stream);
+  stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+
+  const title =
+    type === "student"
+      ? "Student Academic Report"
+      : type === "class"
+        ? "Class Performance Report"
+        : type === "attendance"
+          ? "Attendance Report"
+          : "Report";
+
+  doc.info.Title = title;
+
+  // Branded header (minimal, non-disruptive)
+  const schoolName = String(data?.school?.name ?? data?.student?.schoolName ?? data?.schoolName ?? "Campus");
+  const pageWidth = doc.page.width;
+  const headerTop = 28;
+  doc.save();
+  doc.rect(0, 0, pageWidth, 8).fill("#0ea5e9");
+  doc.restore();
+  doc.fontSize(10).fillColor("#64748b").text(schoolName, 40, headerTop, { align: "left" });
+  doc.fontSize(10).fillColor("#64748b").text("campus", 40, headerTop, { align: "right" });
+  doc.moveDown(1.2);
+
+  doc.fontSize(18).text(title, { align: "center" });
+  doc.moveDown(0.25);
+  doc.fontSize(10).text(`Generated on ${new Date().toLocaleString()}`, { align: "center" });
+  doc.moveDown(1);
+
+  if (type === "student") {
+    renderStudentReportPdf(doc, data);
+  } else if (type === "class") {
+    renderClassReportPdf(doc, data);
+  } else if (type === "attendance") {
+    renderAttendanceReportPdf(doc, data);
+  } else {
+    doc.fontSize(12).text("Unsupported report type.");
+  }
+
+  doc.end();
+
+  await new Promise<void>((resolve, reject) => {
+    stream.on("end", () => resolve());
+    stream.on("error", (e) => reject(e));
+    doc.on("error", (e) => reject(e));
+  });
+
+  return Buffer.concat(chunks);
+}
+
+function renderKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {
+  doc.fontSize(10).fillColor("#111").text(label, { continued: true });
+  doc.fontSize(10).fillColor("#444").text(value);
+  doc.fillColor("#111");
+}
+
+function drawTableHeader(doc: PDFKit.PDFDocument, cols: { label: string; width: number }[]) {
+  const startX = doc.x;
+  const y = doc.y;
+  doc.fontSize(9).fillColor("#111");
+  let x = startX;
+  for (const c of cols) {
+    doc.text(c.label, x, y, { width: c.width, continued: false });
+    x += c.width;
+  }
+  doc.moveDown(0.6);
+  doc.moveTo(startX, doc.y).lineTo(startX + cols.reduce((s, c) => s + c.width, 0), doc.y).strokeColor("#ccc").stroke();
+  doc.moveDown(0.4);
+  doc.strokeColor("#000");
+}
+
+function drawTableRow(
+  doc: PDFKit.PDFDocument,
+  cols: { width: number }[],
+  values: string[]
+) {
+  const startX = doc.x;
+  const y = doc.y;
+  let x = startX;
+  doc.fontSize(9).fillColor("#333");
+  for (let i = 0; i < cols.length; i++) {
+    doc.text(values[i] ?? "", x, y, { width: cols[i]!.width });
+    x += cols[i]!.width;
+  }
+  doc.moveDown(0.6);
+  doc.fillColor("#111");
+}
+
+function renderStudentReportPdf(doc: PDFKit.PDFDocument, data: any) {
+  const student = data?.student;
+  const summary = data?.summary;
+
+  doc.fontSize(12).text("Student Information", { underline: true });
+  doc.moveDown(0.4);
+  renderKeyValue(doc, "Name: ", String(student?.name ?? ""));
+  renderKeyValue(doc, "Student ID: ", String(student?.studentId ?? ""));
+  renderKeyValue(doc, "Email: ", String(student?.email ?? ""));
+  doc.moveDown(0.8);
+
+  doc.fontSize(12).text("Summary", { underline: true });
+  doc.moveDown(0.4);
+  renderKeyValue(doc, "Total assignments: ", String(summary?.totalAssignments ?? 0));
+  renderKeyValue(doc, "Submitted assignments: ", String(summary?.submittedAssignments ?? 0));
+  renderKeyValue(doc, "Average score: ", `${String(summary?.averageScore ?? "0")}%`);
+  renderKeyValue(doc, "Attendance rate: ", `${String(summary?.attendanceRate ?? "0")}%`);
+  if (summary?.remark) renderKeyValue(doc, "Remarks: ", String(summary.remark));
+  doc.moveDown(0.8);
+
+  doc.fontSize(12).text("Assignments", { underline: true });
+  doc.moveDown(0.4);
+
+  const cols = [
+    { label: "Title", width: 240 },
+    { label: "Subject", width: 120 },
+    { label: "Score", width: 60 },
+    { label: "Submitted", width: 80 },
+  ];
+  drawTableHeader(doc, cols);
+
+  const assignments: any[] = Array.isArray(data?.assignments) ? data.assignments : [];
+  for (const a of assignments) {
+    const submittedAt = a?.submission?.submittedAt ? new Date(a.submission.submittedAt).toLocaleDateString() : "";
+    drawTableRow(
+      doc,
+      cols,
+      [
+        String(a?.assignment?.title ?? ""),
+        String(a?.subject?.name ?? ""),
+        a?.submission?.score === null || typeof a?.submission?.score === "undefined" ? "" : String(a.submission.score),
+        submittedAt,
+      ]
+    );
+    if (doc.y > 740) doc.addPage();
+  }
+}
+
+function renderClassReportPdf(doc: PDFKit.PDFDocument, data: any) {
+  doc.fontSize(12).text("Class Summary", { underline: true });
+  doc.moveDown(0.4);
+  const summary = data?.summary;
+  renderKeyValue(doc, "Total students: ", String(summary?.totalStudents ?? 0));
+  renderKeyValue(doc, "Class average: ", summary?.classAverage != null ? String(summary.classAverage) : "0");
+  renderKeyValue(doc, "Needs improvement (<60): ", String(summary?.needsImprovement ?? 0));
+  doc.moveDown(0.8);
+
+  doc.fontSize(12).text("Students", { underline: true });
+  doc.moveDown(0.4);
+
+  const cols = [
+    { label: "Name", width: 180 },
+    { label: "Student ID", width: 90 },
+    { label: "Email", width: 140 },
+    { label: "Avg", width: 50 },
+  ];
+  drawTableHeader(doc, cols);
+
+  const students: any[] = Array.isArray(data?.students) ? data.students : [];
+  for (const s of students) {
+    drawTableRow(
+      doc,
+      cols,
+      [
+        String(s?.student?.name ?? s?.studentName ?? ""),
+        String(s?.student?.studentId ?? ""),
+        String(s?.student?.email ?? ""),
+        String(s?.averageScore ?? ""),
+      ]
+    );
+    if (doc.y > 740) doc.addPage();
+  }
+}
+
+function renderAttendanceReportPdf(doc: PDFKit.PDFDocument, data: any) {
+  doc.fontSize(12).text("Attendance Summary", { underline: true });
+  doc.moveDown(0.4);
+  const statistics = data?.statistics;
+  renderKeyValue(doc, "Total records: ", String(statistics?.totalRecords ?? 0));
+  renderKeyValue(doc, "Present rate: ", `${String(statistics?.presentRate ?? "0")}%`);
+  renderKeyValue(doc, "Absent rate: ", `${String(statistics?.absentRate ?? "0")}%`);
+  doc.moveDown(0.8);
+
+  doc.fontSize(12).text("Records", { underline: true });
+  doc.moveDown(0.4);
+
+  const cols = [
+    { label: "Date", width: 90 },
+    { label: "Student", width: 200 },
+    { label: "Subject", width: 140 },
+    { label: "Status", width: 60 },
+  ];
+  drawTableHeader(doc, cols);
+
+  const records: any[] = Array.isArray(data?.records) ? data.records : [];
+  for (const r of records) {
+    const date = r?.session?.date ? new Date(r.session.date).toLocaleDateString() : "";
+    drawTableRow(doc, cols, [date, String(r?.student?.name ?? ""), String(r?.subject ?? ""), String(r?.entry?.status ?? "")]);
+    if (doc.y > 740) doc.addPage();
+  }
 }
 
 // Excel/CSV Generation
@@ -48,7 +246,9 @@ export async function generateStudentReport(schoolId: string, studentId: string,
     }
 
     // Get enrollment
-    const [enrollment] = await db
+    // NOTE: termId is not reliably stored on enrollments in all environments.
+    // We anchor on academicYear + active status, then prefer a matching termId if present.
+    const enrollments = await db
       .select()
       .from(studentEnrollments)
       .where(
@@ -56,14 +256,21 @@ export async function generateStudentReport(schoolId: string, studentId: string,
           eq(studentEnrollments.schoolId, schoolId),
           eq(studentEnrollments.studentId, studentId),
           academicYearId ? eq(studentEnrollments.academicYearId, academicYearId) : undefined,
-          termId ? eq(studentEnrollments.termId, termId) : undefined,
           eq(studentEnrollments.status, "active")
         )
       )
-      .limit(1);
+      .orderBy(desc(studentEnrollments.createdAt));
 
-    if (!enrollment) {
-      throw new Error('Student enrollment not found');
+    const enrollment =
+      (termId ? enrollments.find((e) => e.termId === termId) : undefined) ??
+      enrollments[0] ??
+      null;
+
+    const effectiveAcademicYearId = academicYearId ?? enrollment?.academicYearId ?? null;
+    const effectiveTermId = termId ?? enrollment?.termId ?? null;
+
+    if (!effectiveAcademicYearId) {
+      throw new Error("Academic year scope is required");
     }
 
     // Get assignment submissions with grades
@@ -95,8 +302,8 @@ export async function generateStudentReport(schoolId: string, studentId: string,
           eq(smsAssignments.schoolId, schoolId),
           eq(subjects.schoolId, schoolId),
           eq(smsAssignmentSubmissions.studentId, studentId),
-          eq(smsAssignments.academicYearId, enrollment.academicYearId),
-          termId ? eq(smsAssignments.termId, termId) : undefined
+          eq(smsAssignments.academicYearId, effectiveAcademicYearId),
+          effectiveTermId ? eq(smsAssignments.termId, effectiveTermId) : undefined
         )
       )
       .orderBy(desc(smsAssignmentSubmissions.submittedAt));
@@ -120,8 +327,8 @@ export async function generateStudentReport(schoolId: string, studentId: string,
           eq(smsAttendanceSessions.schoolId, schoolId),
           eq(subjects.schoolId, schoolId),
           eq(smsAttendanceEntries.studentId, studentId),
-          eq(smsAttendanceSessions.academicYearId, enrollment.academicYearId),
-          termId ? eq(smsAttendanceSessions.termId, termId) : undefined
+          eq(smsAttendanceSessions.academicYearId, effectiveAcademicYearId),
+          effectiveTermId ? eq(smsAttendanceSessions.termId, effectiveTermId) : undefined
         )
       )
       .orderBy(desc(smsAttendanceSessions.date));
@@ -445,6 +652,38 @@ ${index + 1}. ${assignment.assignment.title}
 }
 
 function convertToCSV(data: any[], type: string): string {
+  if (type === 'student') {
+    const headers = [
+      'Student Name',
+      'Student ID',
+      'Email',
+      'Total Assignments',
+      'Submitted Assignments',
+      'Average Score',
+      'Attendance Rate',
+      'Remark',
+    ];
+
+    const rows = data.map((report: any) => {
+      const student = report?.student || {};
+      const summary = report?.summary || {};
+      return [
+        student?.name ?? '',
+        student?.studentId ?? '',
+        student?.email ?? '',
+        summary?.totalAssignments ?? '',
+        summary?.submittedAssignments ?? '',
+        summary?.averageScore ?? '',
+        summary?.attendanceRate ?? '',
+        summary?.remark ?? '',
+      ];
+    });
+
+    return [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+  }
+
   if (type === 'attendance') {
     const headers = ['Date', 'Student Name', 'Student ID', 'Subject', 'Status', 'Notes'];
     const rows = data.map(record => [
@@ -462,9 +701,9 @@ function convertToCSV(data: any[], type: string): string {
   if (type === 'class_performance') {
     const headers = ['Student Name', 'Student ID', 'Email', 'Total Assignments', 'Submitted', 'Average Score', 'Highest Score', 'Lowest Score'];
     const rows = data.map(student => [
-      student.name,
-      student.studentId,
-      student.email,
+      student?.student?.name ?? '',
+      student?.student?.studentId ?? '',
+      student?.student?.email ?? '',
       student.totalAssignments,
       student.submittedAssignments,
       student.averageScore,

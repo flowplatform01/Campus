@@ -41,12 +41,18 @@ export default function ForgotPassword() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardHeader>
+            <div className="flex justify-center mb-2">
+              <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
+            </div>
             <h1 className="text-xl font-bold">Check your email</h1>
             <p className="text-sm text-muted-foreground">
-              If an account exists for {email}, you will receive a password reset link shortly.
+              If an account exists for {email}, you will receive a password reset link and a reset code shortly.
             </p>
           </CardHeader>
           <CardContent>
+            <Button onClick={() => setLocation('/reset-password')} className="w-full mb-2">
+              Enter Reset Code
+            </Button>
             <Button onClick={() => setLocation('/')} variant="outline" className="w-full">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Login
@@ -61,6 +67,9 @@ export default function ForgotPassword() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader>
+          <div className="flex justify-center mb-2">
+            <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
+          </div>
           <h1 className="text-xl font-bold">Forgot Password</h1>
           <p className="text-sm text-muted-foreground">
             Enter your email and we'll send you a link to reset your password.

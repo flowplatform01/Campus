@@ -68,9 +68,12 @@ export default function AdminDashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">School Administration</h1>
-          <p className="text-muted-foreground">Manage your school from one central dashboard</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">School Administration</h1>
+            <p className="text-muted-foreground">Manage your school from one central dashboard</p>
+          </div>
         </div>
 
         {data && data?.setup && data.setup.hasActiveAcademicYear === false && (

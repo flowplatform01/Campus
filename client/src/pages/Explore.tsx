@@ -56,9 +56,12 @@ export default function Explore() {
     <DashboardLayout>
       <SocialSubNav />
       <div className="max-w-6xl mx-auto space-y-6 mt-6">
-        <div>
-          <h1 className="text-3xl font-bold">Explore</h1>
-          <p className="text-muted-foreground">Discover trending content, people, and communities</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">Explore</h1>
+            <p className="text-muted-foreground">Discover trending content, people, and communities</p>
+          </div>
         </div>
 
         <div className="relative">

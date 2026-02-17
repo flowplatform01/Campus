@@ -89,9 +89,12 @@ export default function ParentDashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Family Dashboard</h1>
-          <p className="text-muted-foreground">Monitor your child's progress</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">Family Dashboard</h1>
+            <p className="text-muted-foreground">Monitor your child's progress</p>
+          </div>
         </div>
 
         <Alert>

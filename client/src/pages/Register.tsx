@@ -19,14 +19,12 @@ declare global {
 export default function Register() {
   const [step, setStep] = useState<'role' | 'form'>('role');
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
-  const [selectedSubRole, setSelectedSubRole] = useState<string>('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     name: '',
     schoolName: '',
     studentId: '',
-    employeeId: ''
   });
   const [loading, setLoading] = useState(false);
   const { register, loginWithGoogle } = useAuth();
@@ -136,9 +134,7 @@ export default function Register() {
         name: formData.name,
         role: selectedRole,
         schoolName: selectedRole === 'admin' ? formData.schoolName : undefined,
-        subRole: selectedRole === 'employee' && selectedSubRole ? selectedSubRole : undefined,
         studentId: selectedRole === 'student' ? formData.studentId : undefined,
-        employeeId: selectedRole === 'employee' ? formData.employeeId : undefined
       });
 
       const verificationEmailSent = (result as any)?.verificationEmailSent;
@@ -199,6 +195,9 @@ export default function Register() {
             >
               <Card>
                 <CardHeader className="space-y-1">
+                  <div className="flex justify-center">
+                    <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
+                  </div>
                   <CardTitle className="text-3xl font-bold text-center">Create Account</CardTitle>
                   <CardDescription className="text-center">
                     Select your role to get started
@@ -265,6 +264,9 @@ export default function Register() {
             >
               <Card>
                 <CardHeader className="space-y-1">
+                  <div className="flex justify-center">
+                    <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
+                  </div>
                   <CardTitle className="text-3xl font-bold text-center">Create Account</CardTitle>
                   <CardDescription className="text-center">
                     Sign up as {selectedRole && selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}
@@ -366,42 +368,6 @@ export default function Register() {
                           />
                         </div>
                       </div>
-                    )}
-
-                    {selectedRole === 'employee' && (
-                      <>
-                        <div className="space-y-2">
-                          <Label htmlFor="subRole">Position</Label>
-                          <select
-                            id="subRole"
-                            value={selectedSubRole}
-                            onChange={(e) => setSelectedSubRole(e.target.value)}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            required
-                          >
-                            <option value="">Select Position</option>
-                            <option value="teacher">Teacher</option>
-                            <option value="principal">Principal</option>
-                            <option value="bursar">Bursar</option>
-                            <option value="secretary">Secretary</option>
-                            <option value="counselor">Counselor</option>
-                          </select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="employeeId">Employee ID</Label>
-                          <div className="relative">
-                            <Hash className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            <Input
-                              id="employeeId"
-                              placeholder="EMP001"
-                              value={formData.employeeId}
-                              onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
-                              className="pl-10"
-                              required
-                            />
-                          </div>
-                        </div>
-                      </>
                     )}
 
                     <Button type="submit" className="w-full" disabled={loading}>

@@ -45,6 +45,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       name: user.name,
       role: user.role,
       schoolId: user.schoolId ?? undefined,
+      subRole: user.subRole ?? undefined,
     };
     next();
   } catch {
@@ -70,6 +71,7 @@ export function optionalAuth(req: AuthRequest, res: Response, next: NextFunction
           name: user.name,
           role: user.role,
           schoolId: user.schoolId ?? undefined,
+          subRole: user.subRole ?? undefined,
         };
       }
     } catch {}
@@ -90,15 +92,13 @@ export function requireTenantAccess(req: AuthRequest, res: Response, next: NextF
   
   // 🔐 ENFORCE STRICT TENANT ISOLATION AT MIDDLEWARE LEVEL
   // Block any request that tries to access resources from a different school
-  const requestSchoolId = 
-    req.params.schoolId || 
-    req.query.schoolId || 
-    req.body.schoolId ||
-    req.params.id ||
-    req.query.id;
+  const requestSchoolId =
+    (req.params as any)?.schoolId ||
+    (req.query as any)?.schoolId ||
+    (req.body as any)?.schoolId;
   
   // If any school-related ID is provided, it must match the user's school
-  if (requestSchoolId && requestSchoolId !== userSchoolId) {
+  if (typeof requestSchoolId === "string" && requestSchoolId && requestSchoolId !== userSchoolId) {
     console.warn(`🚨 CROSS-TENANT ACCESS ATTEMPT: User ${req.user.id} from school ${userSchoolId} trying to access resource ${requestSchoolId}`);
     return res.status(403).json({ message: "Cross-tenant access denied" });
   }

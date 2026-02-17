@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { uploadToB2, generateKey, getSignedDownloadUrl } from "./storage-b2.js";
+import { uploadToB2, generateKey, getSignedDownloadUrl, deleteFromB2 } from "./storage-b2.js";
 import { db } from "../db.js";
 import { schools, users } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -10,6 +10,8 @@ export type AssetType =
   | "assignment_attachment" 
   | "assignment_submission" 
   | "resource_file" 
+  | "enrollment_document"
+  | "social_post_media"
   | "report_export";
 
 export interface StorageResult {
@@ -34,6 +36,8 @@ function getStorageType(assetType: AssetType): "neon" | "backblaze" {
     case "assignment_attachment":
     case "assignment_submission": 
     case "resource_file":
+    case "enrollment_document":
+    case "social_post_media":
     case "report_export":
       return "backblaze";
       
@@ -190,8 +194,7 @@ export async function deleteAsset(
       }
       return true;
     } else {
-      // TODO: Implement Backblaze deletion
-      console.log("Backblaze deletion not implemented yet for:", identifier);
+      await deleteFromB2(identifier);
       return true;
     }
   } catch (error) {

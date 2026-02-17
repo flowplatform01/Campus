@@ -212,9 +212,12 @@ export default function CampusUsersPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">User Management</h1>
-            <p className="text-muted-foreground">Create and manage students, parents, and employees in your school</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">User Management</h1>
+              <p className="text-muted-foreground">Create and manage students, parents, and employees in your school</p>
+            </div>
           </div>
 
           <Dialog open={open} onOpenChange={setOpen}>

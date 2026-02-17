@@ -675,6 +675,23 @@ export const smsExamMarks = pgTable("sms_exam_marks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ============ SMS (Report Publishing) ============
+export const smsReportPublications = pgTable("sms_report_publications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  scopeType: varchar("scope_type", { length: 30 }).notNull(), // student | class | exam | term | academic_year
+  academicYearId: varchar("academic_year_id").references(() => academicYears.id),
+  termId: varchar("term_id").references(() => academicTerms.id),
+  examId: varchar("exam_id").references(() => smsExams.id),
+  classId: varchar("class_id").references(() => schoolClasses.id),
+  studentId: varchar("student_id").references(() => users.id),
+  status: varchar("status", { length: 20 }).default("draft").notNull(), // draft | reviewed | published
+  publishedAt: timestamp("published_at"),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const smsGradeScales = pgTable("sms_grade_scales", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   schoolId: varchar("school_id").references(() => schools.id).notNull(),

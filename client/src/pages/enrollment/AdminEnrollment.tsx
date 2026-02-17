@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
@@ -39,12 +39,22 @@ export default function AdminEnrollmentPage() {
   });
 
   const [settingsForm, setSettingsForm] = useState({
+    enrollmentOpen: true,
     studentApplicationsEnabled: true,
     parentApplicationsEnabled: true,
     staffApplicationsEnabled: true,
-    autoApprovalEnabled: false,
-    requiredDocuments: [] as string[],
   });
+
+  useEffect(() => {
+    if (!settings) return;
+    setSettingsForm({
+      enrollmentOpen: typeof settings.enrollmentOpen === 'boolean' ? settings.enrollmentOpen : true,
+      studentApplicationsEnabled:
+        typeof settings.studentApplicationsEnabled === 'boolean' ? settings.studentApplicationsEnabled : true,
+      parentApplicationsEnabled: typeof settings.parentApplicationsEnabled === 'boolean' ? settings.parentApplicationsEnabled : true,
+      staffApplicationsEnabled: typeof settings.staffApplicationsEnabled === 'boolean' ? settings.staffApplicationsEnabled : true,
+    });
+  }, [settings]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -129,9 +139,12 @@ export default function AdminEnrollmentPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Enrollment Management</h1>
-            <p className="text-muted-foreground">Manage all student, parent, and employee applications</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Enrollment Management</h1>
+              <p className="text-muted-foreground">Manage all student, parent, and employee applications</p>
+            </div>
           </div>
         </div>
 
@@ -376,6 +389,19 @@ export default function AdminEnrollmentPage() {
                 <CardContent className="space-y-4">
                   <form onSubmit={(e) => { e.preventDefault(); updateSettings.mutate(); }} className="space-y-4">
                     <div className="grid gap-2">
+                      <Label htmlFor="enrollmentOpen">Enrollment Open</Label>
+                      <select
+                        id="enrollmentOpen"
+                        value={settingsForm.enrollmentOpen.toString()}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, enrollmentOpen: e.target.value === 'true' })}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="true">Open</option>
+                        <option value="false">Closed</option>
+                      </select>
+                    </div>
+
+                    <div className="grid gap-2">
                       <Label htmlFor="studentApplicationsEnabled">Student Applications</Label>
                       <select
                         id="studentApplicationsEnabled"
@@ -412,30 +438,6 @@ export default function AdminEnrollmentPage() {
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label htmlFor="autoApprovalEnabled">Auto-Approval</Label>
-                      <select
-                        id="autoApprovalEnabled"
-                        value={settingsForm.autoApprovalEnabled.toString()}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, autoApprovalEnabled: e.target.value === 'true' })}
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                      </select>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label htmlFor="requiredDocuments">Required Documents</Label>
-                      <Input
-                        id="requiredDocuments"
-                        value={settingsForm.requiredDocuments.join(', ')}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, requiredDocuments: e.target.value.split(', ').map(doc => doc.trim()) })}
-                        placeholder="Birth certificate, transcripts, etc."
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      />
                     </div>
 
                     <Button type="submit" disabled={updateSettings.isPending} className="w-full">

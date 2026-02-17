@@ -183,9 +183,7 @@ export function DynamicSidebar() {
   return (
     <div className="flex flex-col h-full">
       <div className="p-6 border-b">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-          Campus
-        </h1>
+        <img src="/brand-logo-horizontal.svg" alt="Campus" className="h-10 w-auto" />
         <p className="text-xs text-muted-foreground mt-1">
           {isCampusMode ? 'Management System' : 'Social Network'}
         </p>

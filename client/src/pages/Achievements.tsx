@@ -96,9 +96,12 @@ export default function Achievements() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Achievements & Rewards</h1>
-          <p className="text-muted-foreground">Track your progress and earn rewards</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">Achievements & Rewards</h1>
+            <p className="text-muted-foreground">Track your progress and earn rewards</p>
+          </div>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">

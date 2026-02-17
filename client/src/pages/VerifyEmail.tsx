@@ -26,6 +26,7 @@ export default function VerifyEmail() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 flex flex-col items-center gap-4">
+            <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
             <p>Verifying your email...</p>
           </CardContent>
@@ -39,6 +40,9 @@ export default function VerifyEmail() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardHeader>
+            <div className="flex justify-center mb-2">
+              <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
+            </div>
             <div className="flex items-center gap-2 text-green-600">
               <CheckCircle className="h-8 w-8" />
               <h1 className="text-xl font-bold">Email Verified!</h1>
@@ -59,6 +63,9 @@ export default function VerifyEmail() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader>
+          <div className="flex justify-center mb-2">
+            <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
+          </div>
           <h1 className="text-xl font-bold text-destructive">Verification Failed</h1>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -12,14 +12,21 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, Briefcase, FileText, CheckCircle, Clock, AlertCircle, Upload } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function EmployeeEnrollmentPage() {
   useRequireAuth(['employee']);
   const qc = useQueryClient();
   const { toast } = useToast();
 
+  const [schoolSearchTerm, setSchoolSearchTerm] = useState('');
+  const trimmedQuery = schoolSearchTerm.trim();
+  const shouldSearch = trimmedQuery.length >= 2;
+
   const { data: schools, isLoading: schoolsLoading } = useQuery({
-    queryKey: ['schools-for-employee-enrollment'],
-    queryFn: () => api.enrollment.schools.search(),
+    queryKey: ['schools-for-employee-enrollment', schoolSearchTerm],
+    queryFn: () => api.enrollment.schools.search(trimmedQuery),
+    enabled: shouldSearch,
   });
 
   const { data: applications = [], isLoading: appsLoading } = useQuery({
@@ -30,6 +37,7 @@ export default function EmployeeEnrollmentPage() {
   const [applicationForm, setApplicationForm] = useState({
     schoolId: '',
     desiredSubRole: '',
+    customSubRoleName: '',
     experience: '',
     qualifications: '',
     previousEmployment: '',
@@ -38,23 +46,51 @@ export default function EmployeeEnrollmentPage() {
     documents: [] as File[],
   });
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const [applicationsSearchTerm, setApplicationsSearchTerm] = useState('');
 
-  const filteredSchools = schools?.filter(school =>
-    school.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    school.staffApplicationsAllowed
-  ) || [];
+  const { data: schoolSubRoles, isLoading: subRolesLoading } = useQuery({
+    queryKey: ['enrollment-school-sub-roles', applicationForm.schoolId],
+    queryFn: () => api.enrollment.schools.subRoles(applicationForm.schoolId),
+    enabled: !!applicationForm.schoolId,
+    staleTime: 60_000,
+  });
+
+  const filteredSchools = schools || [];
 
   const submitApplication = useMutation({
-    mutationFn: () => api.enrollment.employee.apply({
-      ...applicationForm,
-      documents: applicationForm.documents.map(doc => doc.name),
-    }),
+    mutationFn: async () => {
+      const docs = (applicationForm.documents || []).slice(0, 5);
+      const keys: string[] = [];
+
+      for (const file of docs) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('assetType', 'enrollment_document');
+
+        const res = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+          },
+          body: formData,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || 'Document upload failed');
+        if (!data?.key) throw new Error('Upload did not return a key');
+        keys.push(String(data.key));
+      }
+
+      return api.enrollment.employee.apply({
+        ...applicationForm,
+        documents: keys,
+      });
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['my-job-applications'] });
       setApplicationForm({
         schoolId: '',
         desiredSubRole: '',
+        customSubRoleName: '',
         experience: '',
         qualifications: '',
         previousEmployment: '',
@@ -94,9 +130,12 @@ export default function EmployeeEnrollmentPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Employee Enrollment</h1>
-            <p className="text-muted-foreground">Apply for teaching and staff positions at schools</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Employee Enrollment</h1>
+              <p className="text-muted-foreground">Apply for teaching and staff positions at schools</p>
+            </div>
           </div>
         </div>
 
@@ -121,8 +160,8 @@ export default function EmployeeEnrollmentPage() {
                     <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input
                       placeholder="Search schools..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      value={schoolSearchTerm}
+                      onChange={(e) => setSchoolSearchTerm(e.target.value)}
                       className="pl-10"
                     />
                   </div>
@@ -130,21 +169,51 @@ export default function EmployeeEnrollmentPage() {
                   <div className="space-y-3 max-h-64 overflow-y-auto">
                     {schoolsLoading ? (
                       <div className="text-center py-8">Loading schools...</div>
+                    ) : !shouldSearch ? (
+                      <div className="text-center py-8 text-muted-foreground">Start typing to find schools</div>
                     ) : filteredSchools.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         No schools found matching your search
                       </div>
                     ) : (
-                      filteredSchools.map((school: any) => (
-                        <div key={school.id} className="p-4 border rounded-lg hover:bg-accent cursor-pointer transition-colors">
+                      filteredSchools.map((school: any) => {
+                        const selected = applicationForm.schoolId === school.id;
+                        return (
+                        <div
+                          key={school.id}
+                          className={`p-4 border rounded-lg transition-colors ${
+                            selected
+                              ? 'border-primary bg-accent/50 ring-1 ring-primary'
+                              : school.enrollmentOpen
+                                ? 'hover:bg-accent cursor-pointer'
+                                : 'opacity-75 cursor-not-allowed'
+                          }`}
+                          onMouseEnter={() => {
+                            if (!school?.id) return;
+                            qc.prefetchQuery({
+                              queryKey: ['enrollment-school-sub-roles', school.id],
+                              queryFn: () => api.enrollment.schools.subRoles(school.id),
+                              staleTime: 60_000,
+                            });
+                          }}
+                          onClick={() => {
+                            if (!school.enrollmentOpen) return;
+                            setApplicationForm({
+                              ...applicationForm,
+                              schoolId: school.id,
+                              desiredSubRole: '',
+                              customSubRoleName: '',
+                            });
+                          }}
+                        >
                           <div className="flex items-start justify-between">
                             <div>
                               <h3 className="font-semibold">{school.name}</h3>
                               <p className="text-sm text-muted-foreground">{school.address}</p>
                               <p className="text-sm">{school.description}</p>
                               <div className="flex items-center gap-2 mt-2">
-                                <Badge variant={school.staffApplicationsAllowed ? 'default' : 'secondary'}>
-                                  {school.staffApplicationsAllowed ? 'Staff Applications Open' : 'Closed'}
+                                <Badge variant={school.enrollmentOpen ? 'default' : 'secondary'}>
+                                  {school.enrollmentOpen ? 'Accepting Applications' : 'Closed'}
                                 </Badge>
                                 {school.type && (
                                   <Badge variant="outline">{school.type}</Badge>
@@ -164,16 +233,24 @@ export default function EmployeeEnrollmentPage() {
                               )}
                             </div>
                             <Button
-                              onClick={() => setApplicationForm({ ...applicationForm, schoolId: school.id })}
-                              disabled={!school.staffApplicationsAllowed}
-                              variant="outline"
+                              onClick={() =>
+                                setApplicationForm({
+                                  ...applicationForm,
+                                  schoolId: school.id,
+                                  desiredSubRole: '',
+                                  customSubRoleName: '',
+                                })
+                              }
+                              disabled={!school.enrollmentOpen}
+                              variant={selected ? 'default' : 'outline'}
                               size="sm"
                             >
-                              Select
+                              {selected ? 'Selected' : 'Select'}
                             </Button>
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </CardContent>
@@ -199,26 +276,52 @@ export default function EmployeeEnrollmentPage() {
                         <select
                           id="desiredSubRole"
                           value={applicationForm.desiredSubRole}
-                          onChange={(e) => setApplicationForm({ ...applicationForm, desiredSubRole: e.target.value })}
+                          onChange={(e) =>
+                            setApplicationForm({
+                              ...applicationForm,
+                              desiredSubRole: e.target.value,
+                              ...(e.target.value === 'other' ? {} : { customSubRoleName: '' }),
+                            })
+                          }
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          disabled={subRolesLoading || !(schoolSubRoles || []).length}
                           required
                         >
                           <option value="">Select position</option>
-                          <option value="teacher">Teacher</option>
-                          <option value="accountant">Accountant</option>
-                          <option value="principal">Principal</option>
-                          <option value="bursar">Bursar</option>
-                          <option value="admin">Admin</option>
-                          <option value="librarian">Librarian</option>
-                          <option value="counselor">Counselor</option>
-                          <option value="security">Security</option>
-                          <option value="cleaner">Cleaner</option>
-                          <option value="driver">Driver</option>
-                          <option value="it_support">IT Support</option>
-                          <option value="lab_assistant">Lab Assistant</option>
-                          <option value="sports_coach">Sports Coach</option>
+                          {subRolesLoading ? (
+                            <option value="" disabled>
+                              Loading positions...
+                            </option>
+                          ) : (schoolSubRoles || []).length === 0 ? (
+                            <option value="" disabled>
+                              No positions available for this school
+                            </option>
+                          ) : (
+                            (schoolSubRoles || []).map((r: any) => (
+                              <option key={r.id} value={r.key}>
+                                {r.name}
+                              </option>
+                            ))
+                          )}
+                          <option value="other">Other</option>
                         </select>
+                        {!subRolesLoading && applicationForm.schoolId && (schoolSubRoles || []).length === 0 && (
+                          <p className="text-xs text-muted-foreground">Ask the school admin to configure staff positions before applying.</p>
+                        )}
                       </div>
+
+                      {applicationForm.desiredSubRole === 'other' && (
+                        <div className="grid gap-2">
+                          <Label htmlFor="customSubRoleName">Custom Position</Label>
+                          <Input
+                            id="customSubRoleName"
+                            value={applicationForm.customSubRoleName}
+                            onChange={(e) => setApplicationForm({ ...applicationForm, customSubRoleName: e.target.value })}
+                            placeholder="Enter the role you are applying for"
+                            required
+                          />
+                        </div>
+                      )}
 
                       <div className="grid gap-2">
                         <Label htmlFor="experience">Years of Experience</Label>
@@ -290,7 +393,7 @@ export default function EmployeeEnrollmentPage() {
                             type="file"
                             multiple
                             accept=".pdf,.doc,.docx"
-                            onChange={(e) => setApplicationForm({ ...applicationForm, documents: Array.from(e.target.files || []) })}
+                            onChange={(e) => setApplicationForm({ ...applicationForm, documents: Array.from(e.target.files || []).slice(0, 5) })}
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                           />
                           <p className="text-xs text-muted-foreground">
@@ -328,14 +431,14 @@ export default function EmployeeEnrollmentPage() {
                       <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
                         placeholder="Search applications..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        value={applicationsSearchTerm}
+                        onChange={(e) => setApplicationsSearchTerm(e.target.value)}
                         className="pl-10"
                       />
                     </div>
                     {applications
                       .filter((app: any) => {
-                        const q = searchTerm.trim().toLowerCase();
+                        const q = applicationsSearchTerm.trim().toLowerCase();
                         if (!q) return true;
                         return (
                           String(app.school?.name || '').toLowerCase().includes(q) ||

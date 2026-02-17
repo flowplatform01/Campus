@@ -259,11 +259,11 @@ export const api = {
     },
   },
   assignments: {
-    getAll: async () => request<any[]>("/api/academics/assignments"),
+    getAll: async () => request<any[]>("/api/sms/assignments"),
     submit: async (id: string, fileUrl?: string) =>
-      request(`/api/academics/assignments/${id}/submit`, {
+      request(`/api/sms/assignments/${id}/submit`, {
         method: "POST",
-        body: JSON.stringify({ fileUrl }),
+        body: JSON.stringify({ submissionUrl: fileUrl || undefined }),
       }),
   },
   attendance: {
@@ -365,6 +365,24 @@ export const api = {
     },
     reports: {
       summary: async () => request<any>("/api/sms/reports/summary"),
+      publications: {
+        list: async () => request<any[]>("/api/sms/reports/publications"),
+        create: async (data: {
+          scopeType: "student" | "class" | "exam" | "term" | "academic_year";
+          academicYearId: string;
+          termId: string;
+          examId?: string;
+          classId?: string;
+          studentId?: string;
+          status?: "draft" | "reviewed" | "published";
+        }) => request<any>("/api/sms/reports/publications", { method: "POST", body: JSON.stringify(data) }),
+        update: async (id: string, data: { status: "draft" | "reviewed" | "published" }) =>
+          request<any>(`/api/sms/reports/publications/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+      },
+      my: {
+        list: async () => request<any[]>("/api/sms/reports/my"),
+        downloadPdfUrl: (publicationId: string) => `/api/sms/reports/my/${encodeURIComponent(publicationId)}/pdf`,
+      },
     },
     resources: {
       list: async () => request<any[]>("/api/sms/resources"),
@@ -606,6 +624,7 @@ export const api = {
         apply: async (data: {
           schoolId: string;
           desiredSubRole: string;
+          customSubRoleName?: string;
           experience: string;
           qualifications: string;
           previousEmployment?: string;
@@ -755,6 +774,10 @@ export const api = {
         const qs = q && q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
         return request<any[]>(`/api/enrollment/schools${qs}`);
       },
+      classes: async (schoolId: string) => request<any[]>(`/api/enrollment/schools/${encodeURIComponent(schoolId)}/classes`),
+      subRoles: async (schoolId: string) => request<any[]>(`/api/enrollment/schools/${encodeURIComponent(schoolId)}/sub-roles`),
+      applicationForm: async (schoolId: string) =>
+        request<any>(`/api/sms/schools/${encodeURIComponent(schoolId)}/application-form`),
     },
     student: {
       myApplications: async () => request<any[]>("/api/enrollment/student/applications"),
@@ -793,6 +816,7 @@ export const api = {
       apply: async (data: {
         schoolId: string;
         desiredSubRole: string;
+        customSubRoleName?: string;
         experience: string;
         qualifications: string;
         previousEmployment?: string;

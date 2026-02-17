@@ -188,11 +188,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     <Menu className="w-5 h-5" />
                   </Button>
                 )}
-                <div>
+                <div className="flex items-center gap-3">
+                  <img src="/brand-icon.svg" alt="Campus" className="h-9 w-9" />
+                  <div>
                   <h2 className="text-lg font-semibold">Welcome back, {user?.name}</h2>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-sm text-muted-foreground capitalize">{user?.role}</p>
                     <ModeIndicator />
+                  </div>
                   </div>
                 </div>
               </div>

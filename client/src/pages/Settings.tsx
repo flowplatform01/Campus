@@ -27,7 +27,19 @@ import {
 
 const SETTINGS_STORAGE_KEY = 'campus_user_settings';
 
-function getStoredSettings() {
+type UserSettings = {
+  emailNotif: boolean;
+  pushNotif: boolean;
+  socialNotif: boolean;
+  campusNotif: boolean;
+  profileVisible: boolean;
+  showActivity: boolean;
+  contactVisible: boolean;
+  language: string;
+  timezone: string;
+};
+
+function getStoredSettings(): UserSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (raw) return JSON.parse(raw);
@@ -79,7 +91,7 @@ export default function Settings() {
       });
     }
   }, [user?.id, user?.name, user?.email, user?.phone]);
-  const [settings, setSettings] = useState(getStoredSettings);
+  const [settings, setSettings] = useState<UserSettings>(getStoredSettings);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
@@ -122,7 +134,6 @@ export default function Settings() {
         name: user.name || '',
         email: user.email || '',
         phone: user.phone || '',
-        bio: ''
       });
     }
   }, [user]);
@@ -240,9 +251,12 @@ export default function Settings() {
   return (
     <DashboardLayout>
       <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">Manage your account and preferences</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">Settings</h1>
+            <p className="text-muted-foreground">Manage your account and preferences</p>
+          </div>
         </div>
 
         {pendingDeletion && scheduledAt && (
@@ -363,12 +377,12 @@ export default function Settings() {
                 <CardDescription>Manage how you receive updates (saved to this device)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {[
+                {([
                   { key: 'emailNotif', label: 'Email Notifications', desc: 'Receive updates via email' },
                   { key: 'pushNotif', label: 'Push Notifications', desc: 'Receive push notifications' },
                   { key: 'socialNotif', label: 'Social Notifications', desc: 'Get notified about social activity' },
                   { key: 'campusNotif', label: 'Campus Notifications', desc: 'Receive academic and administrative updates' },
-                ].map(({ key, label, desc }) => (
+                ] as const).map(({ key, label, desc }) => (
                   <div key={key} className="flex items-center justify-between">
                     <div>
                       <Label>{label}</Label>
@@ -376,7 +390,7 @@ export default function Settings() {
                     </div>
                     <Switch
                       checked={!!settings[key]}
-                      onCheckedChange={(v) => setSettings((s) => ({ ...s, [key]: v }))}
+                      onCheckedChange={(v) => setSettings((s: UserSettings) => ({ ...s, [key]: v }))}
                     />
                   </div>
                 ))}
@@ -391,11 +405,11 @@ export default function Settings() {
                 <CardDescription>Control who can see your information (saved to this device)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {[
+                {([
                   { key: 'profileVisible', label: 'Public Profile', desc: 'Make your profile visible to others' },
                   { key: 'showActivity', label: 'Show Activity Status', desc: "Let others see when you're online" },
                   { key: 'contactVisible', label: 'Contact Information Visible', desc: 'Display your email and phone number' },
-                ].map(({ key, label, desc }) => (
+                ] as const).map(({ key, label, desc }) => (
                   <div key={key} className="flex items-center justify-between">
                     <div>
                       <Label>{label}</Label>
@@ -403,7 +417,7 @@ export default function Settings() {
                     </div>
                     <Switch
                       checked={!!settings[key]}
-                      onCheckedChange={(v) => setSettings((s) => ({ ...s, [key]: v }))}
+                      onCheckedChange={(v) => setSettings((s: UserSettings) => ({ ...s, [key]: v }))}
                     />
                   </div>
                 ))}
@@ -440,7 +454,7 @@ export default function Settings() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="language">Language</Label>
-                  <Select value={settings.language} onValueChange={(v) => setSettings((s) => ({ ...s, language: v }))}>
+                  <Select value={settings.language} onValueChange={(v) => setSettings((s: UserSettings) => ({ ...s, language: v }))}>
                     <SelectTrigger id="language">
                       <SelectValue />
                     </SelectTrigger>
@@ -456,7 +470,7 @@ export default function Settings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone">Timezone</Label>
-                  <Select value={settings.timezone} onValueChange={(v) => setSettings((s) => ({ ...s, timezone: v }))}>
+                  <Select value={settings.timezone} onValueChange={(v) => setSettings((s: UserSettings) => ({ ...s, timezone: v }))}>
                     <SelectTrigger id="timezone">
                       <SelectValue />
                     </SelectTrigger>

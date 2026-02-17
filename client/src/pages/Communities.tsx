@@ -108,9 +108,12 @@ export default function Communities() {
       <SocialSubNav />
       <div className="max-w-6xl mx-auto space-y-6 mt-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Communities</h1>
-            <p className="text-muted-foreground">Join communities and collaborate with others</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Communities</h1>
+              <p className="text-muted-foreground">Join communities and collaborate with others</p>
+            </div>
           </div>
           <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
             <DialogTrigger asChild>

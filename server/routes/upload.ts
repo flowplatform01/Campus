@@ -17,6 +17,8 @@ const assetTypeSchema = z.enum([
   "assignment_attachment",
   "assignment_submission",
   "resource_file",
+  "enrollment_document",
+  "social_post_media",
   "report_export",
 ]);
 

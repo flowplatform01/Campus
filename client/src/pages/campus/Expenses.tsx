@@ -53,9 +53,12 @@ export default function CampusExpensesPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Expenses</h1>
-            <p className="text-muted-foreground">Track and manage school expenditures</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Expenses</h1>
+              <p className="text-muted-foreground">Track and manage school expenditures</p>
+            </div>
           </div>
           {isBursarOrAdmin && (
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>

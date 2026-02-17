@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from '@/data-access/mockData';
 import { api, ApiUser, GoogleAuthNeedsRoleSelection } from '@/lib/api';
+import { useSplashScreen } from '@/components/ui/splash-screen';
 
 function apiUserToUser(u: ApiUser): User {
   return {
@@ -43,6 +44,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { show, hide, setMessage } = useSplashScreen();
 
   useEffect(() => {
     const token = localStorage.getItem('campus_access_token');
@@ -50,27 +52,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    setMessage("Authenticating...");
+    show("Authenticating...");
+    
     api.auth.me()
       .then((u) => {
         setUser(apiUserToUser(u));
+        setMessage("Loading dashboard...");
       })
       .catch(() => {
         localStorage.removeItem('campus_access_token');
         localStorage.removeItem('campus_refresh_token');
         localStorage.removeItem('campus_user');
       })
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => {
+        setLoading(false);
+        hide();
+      });
+  }, [show, hide, setMessage]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
+      setMessage("Signing in...");
+      show("Signing in...");
+      
       const res = await api.auth.login(email, password);
       setUser(apiUserToUser(res.user));
       localStorage.setItem('campus_access_token', res.accessToken);
       localStorage.setItem('campus_refresh_token', res.refreshToken);
       localStorage.setItem('campus_user', JSON.stringify(apiUserToUser(res.user)));
+      
+      setMessage("Loading dashboard...");
       return true;
     } catch (e) {
+      hide();
       if (e instanceof Error) {
         throw e;
       }
@@ -101,18 +116,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     employeeId?: string;
     subRole?: string;
   }): Promise<User> => {
-    const res = await api.auth.register({
-      ...data,
-      schoolName: data.schoolName,
-      studentId: data.studentId,
-      employeeId: data.employeeId,
-      subRole: data.subRole,
-    });
-    setUser(apiUserToUser(res.user));
-    localStorage.setItem('campus_access_token', res.accessToken);
-    localStorage.setItem('campus_refresh_token', res.refreshToken);
-    localStorage.setItem('campus_user', JSON.stringify(apiUserToUser(res.user)));
-    return apiUserToUser(res.user);
+    setMessage("Creating account...");
+    show("Creating account...");
+    
+    try {
+      const res = await api.auth.register({
+        ...data,
+        schoolName: data.schoolName,
+        studentId: data.studentId,
+        employeeId: data.employeeId,
+        subRole: data.subRole,
+      });
+      setUser(apiUserToUser(res.user));
+      localStorage.setItem('campus_access_token', res.accessToken);
+      localStorage.setItem('campus_refresh_token', res.refreshToken);
+      localStorage.setItem('campus_user', JSON.stringify(apiUserToUser(res.user)));
+      
+      setMessage("Loading dashboard...");
+      return apiUserToUser(res.user);
+    } catch (e) {
+      hide();
+      throw e;
+    }
   };
 
   const logout = () => {

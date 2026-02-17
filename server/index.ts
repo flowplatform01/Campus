@@ -1,11 +1,19 @@
 import { config } from "./config.js";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes/index.js";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, serveStatic, log } from "./vite.js";
 
 import cors from "cors";
 
 const app = express();
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Promise rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
 
 app.use(cors({
   origin: true,

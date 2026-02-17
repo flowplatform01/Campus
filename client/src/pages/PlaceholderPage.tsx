@@ -13,6 +13,9 @@ export function PlaceholderPage({ title, description }: PlaceholderPageProps) {
       <div className="flex items-center justify-center min-h-[50vh]">
         <Card className="max-w-md">
           <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12" />
+            </div>
             <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
               <Construction className="w-8 h-8 text-primary" />
             </div>

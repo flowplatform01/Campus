@@ -73,9 +73,12 @@ export default function CampusStaffAttendancePage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Staff Attendance</h1>
-            <p className="text-muted-foreground">Monitor and record staff daily attendance</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Staff Attendance</h1>
+              <p className="text-muted-foreground">Monitor and record staff daily attendance</p>
+            </div>
           </div>
         </div>
 

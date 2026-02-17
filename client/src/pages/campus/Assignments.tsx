@@ -23,10 +23,11 @@ export default function CampusAssignmentsPage() {
 
   const [scope, setScope] = useState({ termId: '', classId: '', sectionId: '' });
   const [createForm, setCreateForm] = useState({ subjectId: '', title: '', instructions: '', dueAt: '', maxScore: 100, attachmentFile: null as File | null });
-  const [submitState, setSubmitState] = useState<{ assignmentId: string; submissionUrl: string; submissionText: string } | null>(null);
+  const [submitState, setSubmitState] = useState<{ assignmentId: string; submissionText: string; submissionFile: File | null } | null>(null);
   const [reviewAssignmentId, setReviewAssignmentId] = useState<string>('');
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { score: number; feedback: string }>>({});
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const submissionInputRef = useRef<HTMLInputElement>(null);
 
   const { data: years } = useQuery({ queryKey: ['sms-academic-years'], queryFn: api.sms.academicYears.list });
   const activeYear = useMemo(() => (years || []).find((y: any) => y.isActive) ?? null, [years]);
@@ -132,8 +133,34 @@ export default function CampusAssignmentsPage() {
   });
 
   const submitAssignment = useMutation({
-    mutationFn: (payload: { assignmentId: string; submissionUrl?: string; submissionText?: string }) =>
-      api.sms.assignments.submit(payload.assignmentId, { submissionUrl: payload.submissionUrl, submissionText: payload.submissionText }),
+    mutationFn: async (payload: { assignmentId: string; submissionText?: string; submissionFile?: File | null }) => {
+      let submissionUrl: string | undefined;
+
+      if (payload.submissionFile) {
+        const formData = new FormData();
+        formData.append('file', payload.submissionFile);
+        formData.append('assetType', 'assignment_submission');
+
+        const uploadResponse = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('campus_access_token')}`
+          },
+          body: formData
+        });
+
+        const uploadResult = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok) {
+          throw new Error(uploadResult?.message || 'File upload failed');
+        }
+        if (!uploadResult?.key) {
+          throw new Error('Upload did not return a key');
+        }
+        submissionUrl = uploadResult.key;
+      }
+
+      return api.sms.assignments.submit(payload.assignmentId, { submissionUrl, submissionText: payload.submissionText });
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['sms-assignments'] });
       setSubmitState(null);
@@ -142,12 +169,31 @@ export default function CampusAssignmentsPage() {
     onError: (e: any) => toast({ title: 'Failed to submit', description: e?.message || 'Error', variant: 'destructive' }),
   });
 
+  const openAsset = async (assetKey: string, assetType: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/upload/url/${encodeURIComponent(assetKey)}?assetType=${encodeURIComponent(assetType)}&storageType=backblaze`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || 'Failed to open file');
+      if (!data?.url) throw new Error('No URL returned');
+      window.open(String(data.url), '_blank', 'noopener,noreferrer');
+    } catch (e: any) {
+      toast({ title: 'Unable to open file', description: e?.message || 'Error', variant: 'destructive' });
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Assignments</h1>
-          <p className="text-muted-foreground">Track assignments and deadlines</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">Assignments</h1>
+            <p className="text-muted-foreground">Create, submit, and review assignments</p>
+          </div>
         </div>
 
         <Card>
@@ -288,9 +334,13 @@ export default function CampusAssignmentsPage() {
                           </div>
                           {sub.submissionText && <div className="text-sm">{sub.submissionText}</div>}
                           {sub.submissionUrl && (
-                            <a className="text-sm underline" href={sub.submissionUrl} target="_blank" rel="noreferrer">
+                            <button
+                              type="button"
+                              className="text-sm underline text-left"
+                              onClick={() => openAsset(String(sub.submissionUrl), 'assignment_submission')}
+                            >
                               View submission
-                            </a>
+                            </button>
                           )}
 
                           <div className="grid grid-cols-2 gap-3">
@@ -394,7 +444,7 @@ export default function CampusAssignmentsPage() {
                         <div className="flex justify-end gap-2">
                           <Button
                             size="sm"
-                            onClick={() => setSubmitState({ assignmentId: a.id, submissionUrl: '', submissionText: '' })}
+                            onClick={() => setSubmitState({ assignmentId: a.id, submissionText: '', submissionFile: null })}
                             disabled={a.status !== 'published' || a.submitted}
                           >
                             {a.submitted ? 'Submitted' : 'Submit'}
@@ -413,8 +463,18 @@ export default function CampusAssignmentsPage() {
               <div className="mt-6 grid gap-3 border rounded-lg p-4">
                 <div className="font-medium">Submit Assignment</div>
                 <div className="grid gap-2">
-                  <Label>Submission URL (optional)</Label>
-                  <Input value={submitState.submissionUrl} onChange={(e) => setSubmitState({ ...submitState, submissionUrl: e.target.value })} />
+                  <Label>Submission File (optional)</Label>
+                  <input
+                    ref={submissionInputRef}
+                    type="file"
+                    onChange={(e) => setSubmitState({ ...submitState, submissionFile: e.target.files?.[0] || null })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                  {submitState.submissionFile && (
+                    <p className="text-sm text-muted-foreground">
+                      Selected: {submitState.submissionFile.name}
+                    </p>
+                  )}
                 </div>
                 <div className="grid gap-2">
                   <Label>Submission Text (optional)</Label>
@@ -425,8 +485,8 @@ export default function CampusAssignmentsPage() {
                     onClick={() =>
                       submitAssignment.mutate({
                         assignmentId: submitState.assignmentId,
-                        submissionUrl: submitState.submissionUrl || undefined,
                         submissionText: submitState.submissionText || undefined,
+                        submissionFile: submitState.submissionFile,
                       })
                     }
                     disabled={submitAssignment.isPending}

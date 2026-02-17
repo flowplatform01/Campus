@@ -20,6 +20,17 @@ import { requireAuth, AuthRequest, requireTenantAccess } from "../middleware/aut
 
 const router = Router();
 
+function isSafeAssetKey(prefix: string, v: string) {
+  return typeof v === "string" && v.length > prefix.length && v.startsWith(prefix) && !v.includes("://");
+}
+
+const documentsSchema = z
+  .array(z.string())
+  .max(5)
+  .refine((arr) => arr.every((v) => isSafeAssetKey("enrollment_document/", v)), {
+    message: "Invalid document key",
+  });
+
 // ---------- School discovery (for students/parents/employees) ----------
 router.get("/schools", requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -55,6 +66,81 @@ router.get("/schools", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// ---------- School-scoped employee sub-roles for enrollment (job applications) ----------
+router.get("/schools/:schoolId/sub-roles", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const schoolId = String(req.params.schoolId || "");
+    if (!schoolId) return res.status(400).json({ message: "School ID is required" });
+
+    const role = req.user?.role;
+    const enabledExpr =
+      role === "student"
+        ? schools.studentApplicationsEnabled
+        : role === "parent"
+          ? schools.parentApplicationsEnabled
+          : role === "employee"
+            ? schools.staffApplicationsEnabled
+            : sql<boolean>`true`;
+
+    const [school] = await db
+      .select({ id: schools.id })
+      .from(schools)
+      .where(and(eq(schools.id, schoolId), sql<boolean>`(${schools.enrollmentOpen} and ${enabledExpr})`))
+      .limit(1);
+    if (!school) {
+      return res.status(400).json({ message: "School is not currently accepting applications" });
+    }
+
+    const rows = await db
+      .select({ id: employeeSubRoles.id, key: employeeSubRoles.key, name: employeeSubRoles.name })
+      .from(employeeSubRoles)
+      .where(eq(employeeSubRoles.schoolId, schoolId))
+      .orderBy(employeeSubRoles.name);
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to load sub-roles" });
+  }
+});
+
+// ---------- School-scoped classes for enrollment (real data, no placeholders) ----------
+router.get("/schools/:schoolId/classes", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const schoolId = String(req.params.schoolId || "");
+    if (!schoolId) return res.status(400).json({ message: "School ID is required" });
+
+    const role = req.user?.role;
+    const enabledExpr =
+      role === "student"
+        ? schools.studentApplicationsEnabled
+        : role === "parent"
+          ? schools.parentApplicationsEnabled
+          : role === "employee"
+            ? schools.staffApplicationsEnabled
+            : sql<boolean>`true`;
+
+    const [school] = await db
+      .select({ id: schools.id, enrollmentOpen: schools.enrollmentOpen })
+      .from(schools)
+      .where(and(eq(schools.id, schoolId), sql<boolean>`(${schools.enrollmentOpen} and ${enabledExpr})`))
+      .limit(1);
+    if (!school) {
+      return res.status(400).json({ message: "School is not currently accepting applications" });
+    }
+
+    const rows = await db
+      .select({ id: schoolClasses.id, name: schoolClasses.name, sortOrder: schoolClasses.sortOrder })
+      .from(schoolClasses)
+      .where(eq(schoolClasses.schoolId, schoolId))
+      .orderBy(schoolClasses.sortOrder, schoolClasses.name);
+
+    return res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to load classes" });
+  }
+});
+
 // ---------- Admin: list all applications for school ----------
 router.get("/applications", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
@@ -65,13 +151,52 @@ router.get("/applications", requireAuth, requireTenantAccess, async (req: AuthRe
     const list = await db
       .select({
         app: enrollmentApplications,
-        applicant: { name: users.name, email: users.email, role: users.role },
+        applicant: { id: users.id, name: users.name, email: users.email, role: users.role },
+        school: { id: schools.id, name: schools.name },
+        cls: { id: schoolClasses.id, name: schoolClasses.name },
+        subRole: { id: employeeSubRoles.id, key: employeeSubRoles.key, name: employeeSubRoles.name },
       })
       .from(enrollmentApplications)
       .leftJoin(users, eq(users.id, enrollmentApplications.applicantUserId))
+      .leftJoin(schools, eq(schools.id, enrollmentApplications.schoolId))
+      .leftJoin(schoolClasses, eq(schoolClasses.id, enrollmentApplications.classId))
+      .leftJoin(employeeSubRoles, eq(employeeSubRoles.id, enrollmentApplications.desiredSubRoleId))
       .where(eq(enrollmentApplications.schoolId, schoolId))
       .orderBy(desc(enrollmentApplications.createdAt));
-    return res.json(list.map((r) => ({ ...r.app, applicantName: r.applicant?.name, applicantEmail: r.applicant?.email, applicantRole: r.applicant?.role })));
+
+    return res.json(
+      list.map((r) => {
+        const payload = (r.app.payload || {}) as Record<string, unknown>;
+        const desiredSubRoleFromPayload = typeof payload.desiredSubRole === "string" ? payload.desiredSubRole : null;
+        const customSubRoleName = typeof payload.customSubRoleName === "string" ? payload.customSubRoleName : null;
+
+        const normalizedType =
+          r.app.type === "student_self"
+            ? "student"
+            : r.app.type === "parent_student"
+              ? "parent"
+              : r.app.type;
+
+        const normalizedStatus = r.app.status === "submitted" ? "under_review" : r.app.status;
+
+        const desiredClass = r.cls?.name ?? null;
+        const desiredSubRole =
+          r.subRole?.name ??
+          (desiredSubRoleFromPayload === "other" ? customSubRoleName : desiredSubRoleFromPayload) ??
+          null;
+
+        return {
+          ...r.app,
+          type: normalizedType,
+          status: normalizedStatus,
+          applicant: r.applicant ? { id: r.applicant.id, name: r.applicant.name, email: r.applicant.email, role: r.applicant.role } : null,
+          school: r.school ? { id: r.school.id, name: r.school.name } : null,
+          class: r.cls ? { id: r.cls.id, name: r.cls.name } : null,
+          desiredClass,
+          desiredSubRole,
+        };
+      })
+    );
   } catch (e) {
     return res.status(500).json({ message: "Failed to list applications" });
   }
@@ -105,7 +230,57 @@ router.patch("/applications/:id", requireAuth, requireTenantAccess, async (req: 
       const yearId = app.academicYearId ?? activeYear?.id;
 
       if (app.type === "employee") {
-        await db.update(users).set({ schoolId, subRole: (app.payload as any)?.desiredSubRole ?? null, updatedAt: new Date() }).where(eq(users.id, app.applicantUserId));
+        let subRoleKey: string | null = null;
+        let desiredSubRoleId: string | null = app.desiredSubRoleId ?? null;
+
+        if (desiredSubRoleId) {
+          const [roleRow] = await db
+            .select({ key: employeeSubRoles.key })
+            .from(employeeSubRoles)
+            .where(and(eq(employeeSubRoles.id, desiredSubRoleId), eq(employeeSubRoles.schoolId, schoolId)))
+            .limit(1);
+          subRoleKey = roleRow?.key ?? null;
+        } else {
+          const payload = (app.payload || {}) as Record<string, unknown>;
+          const desired = typeof payload.desiredSubRole === "string" ? payload.desiredSubRole : null;
+          const customName = typeof payload.customSubRoleName === "string" ? payload.customSubRoleName.trim() : "";
+
+          if (desired === "other" && customName) {
+            const generatedKey = customName
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "")
+              .slice(0, 50);
+            const key = generatedKey || `custom_${Date.now().toString(36)}`;
+
+            const [existingSubRole] = await db
+              .select({ id: employeeSubRoles.id, key: employeeSubRoles.key })
+              .from(employeeSubRoles)
+              .where(and(eq(employeeSubRoles.schoolId, schoolId), eq(employeeSubRoles.key, key)))
+              .limit(1);
+
+            const subRoleRow =
+              existingSubRole ??
+              (
+                await db
+                  .insert(employeeSubRoles)
+                  .values({ schoolId, key, name: customName })
+                  .returning({ id: employeeSubRoles.id, key: employeeSubRoles.key })
+              )[0];
+
+            desiredSubRoleId = subRoleRow?.id ?? null;
+            subRoleKey = subRoleRow?.key ?? null;
+          }
+        }
+
+        await db.update(users).set({ schoolId, subRole: subRoleKey, updatedAt: new Date() }).where(eq(users.id, app.applicantUserId));
+
+        if (desiredSubRoleId && desiredSubRoleId !== app.desiredSubRoleId) {
+          await db
+            .update(enrollmentApplications)
+            .set({ desiredSubRoleId, updatedAt: new Date() })
+            .where(eq(enrollmentApplications.id, app.id));
+        }
       }
       if (app.type === "student_self" && app.classId && yearId) {
         const [cls] = await db.select().from(schoolClasses).where(and(eq(schoolClasses.id, app.classId), eq(schoolClasses.schoolId, schoolId))).limit(1);
@@ -123,8 +298,26 @@ router.patch("/applications/:id", requireAuth, requireTenantAccess, async (req: 
           });
         }
       }
+      if (app.type === "student_self" && app.classId && !yearId) {
+        const [cls] = await db.select().from(schoolClasses).where(and(eq(schoolClasses.id, app.classId), eq(schoolClasses.schoolId, schoolId))).limit(1);
+        const [sec] = app.sectionId ? await db.select().from(classSections).where(and(eq(classSections.id, app.sectionId), eq(classSections.schoolId, schoolId))).limit(1) : [null];
+        if (cls) {
+          await db.update(users).set({ schoolId, grade: cls.name, classSection: sec?.name ?? null, updatedAt: new Date() }).where(eq(users.id, app.applicantUserId));
+        } else {
+          await db.update(users).set({ schoolId, updatedAt: new Date() }).where(eq(users.id, app.applicantUserId));
+        }
+      }
       if (app.type === "parent_student" && app.pendingStudentProfileId && app.classId && yearId) {
-        const [pending] = await db.select().from(pendingStudentProfiles).where(eq(pendingStudentProfiles.id, app.pendingStudentProfileId)).limit(1);
+        const [pending] = await db
+          .select()
+          .from(pendingStudentProfiles)
+          .where(
+            and(
+              eq(pendingStudentProfiles.id, app.pendingStudentProfileId),
+              eq(pendingStudentProfiles.parentId, app.applicantUserId)
+            )
+          )
+          .limit(1);
         if (pending) {
           const [cls] = await db.select().from(schoolClasses).where(and(eq(schoolClasses.id, app.classId), eq(schoolClasses.schoolId, schoolId))).limit(1);
           const [sec] = app.sectionId ? await db.select().from(classSections).where(and(eq(classSections.id, app.sectionId), eq(classSections.schoolId, schoolId))).limit(1) : [null];
@@ -181,8 +374,6 @@ router.get("/settings", requireAuth, requireTenantAccess, async (req: AuthReques
       studentApplicationsEnabled: row.studentApplicationsEnabled,
       parentApplicationsEnabled: row.parentApplicationsEnabled,
       staffApplicationsEnabled: row.staffApplicationsEnabled,
-      autoApprovalEnabled: false,
-      requiredDocuments: [],
     });
   } catch (e) {
     console.error(e);
@@ -201,8 +392,6 @@ router.patch("/settings", requireAuth, requireTenantAccess, async (req: AuthRequ
         studentApplicationsEnabled: z.boolean().optional(),
         parentApplicationsEnabled: z.boolean().optional(),
         staffApplicationsEnabled: z.boolean().optional(),
-        autoApprovalEnabled: z.boolean().optional(),
-        requiredDocuments: z.array(z.string()).optional(),
       })
       .parse(req.body);
 
@@ -224,8 +413,6 @@ router.patch("/settings", requireAuth, requireTenantAccess, async (req: AuthRequ
       studentApplicationsEnabled: row.studentApplicationsEnabled,
       parentApplicationsEnabled: row.parentApplicationsEnabled,
       staffApplicationsEnabled: row.staffApplicationsEnabled,
-      autoApprovalEnabled: false,
-      requiredDocuments: [],
     });
   } catch (e) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input", errors: e.errors });
@@ -243,12 +430,33 @@ router.get("/student/applications", requireAuth, async (req: AuthRequest, res) =
 
 router.post("/student/apply", requireAuth, async (req: AuthRequest, res) => {
   if (req.user!.role !== "student") return res.status(403).json({ message: "Not allowed" });
-  const body = z.object({ schoolId: z.string(), classId: z.string(), guardianName: z.string(), guardianContact: z.string(), guardianEmail: z.string(), dateOfBirth: z.string(), address: z.string(), medicalInfo: z.string().optional(), documents: z.array(z.string()) }).parse(req.body);
+  const body = z
+    .object({
+      schoolId: z.string(),
+      classId: z.string(),
+      guardianName: z.string(),
+      guardianContact: z.string(),
+      guardianEmail: z.string(),
+      dateOfBirth: z.string(),
+      address: z.string(),
+      medicalInfo: z.string().optional(),
+      documents: documentsSchema,
+    })
+    .parse(req.body);
 
   const [school] = await db.select().from(schools).where(eq(schools.id, body.schoolId)).limit(1);
   if (!school) return res.status(404).json({ message: "School not found" });
   if (!school.enrollmentOpen || !school.studentApplicationsEnabled) {
     return res.status(400).json({ message: "School is not currently accepting student applications" });
+  }
+
+  const [cls] = await db
+    .select({ id: schoolClasses.id })
+    .from(schoolClasses)
+    .where(and(eq(schoolClasses.id, body.classId), eq(schoolClasses.schoolId, body.schoolId)))
+    .limit(1);
+  if (!cls) {
+    return res.status(400).json({ message: "Invalid classId" });
   }
 
   const [row] = await db.insert(enrollmentApplications).values({ type: "student_self", schoolId: body.schoolId, applicantUserId: req.user!.id, status: "submitted", classId: body.classId, payload: body }).returning();
@@ -289,7 +497,16 @@ router.get("/parent/children", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/parent/register-child", requireAuth, async (req: AuthRequest, res) => {
   if (req.user!.role !== "parent") return res.status(403).json({ message: "Not allowed" });
-  const body = z.object({ name: z.string(), dateOfBirth: z.string(), previousSchool: z.string().optional(), previousClass: z.string().optional(), medicalInfo: z.string().optional(), documents: z.array(z.string()) }).parse(req.body);
+  const body = z
+    .object({
+      name: z.string(),
+      dateOfBirth: z.string(),
+      previousSchool: z.string().optional(),
+      previousClass: z.string().optional(),
+      medicalInfo: z.string().optional(),
+      documents: documentsSchema,
+    })
+    .parse(req.body);
   const [row] = await db.insert(pendingStudentProfiles).values({ parentId: req.user!.id, fullName: body.name, dateOfBirth: new Date(body.dateOfBirth), previousSchool: body.previousSchool ?? null, medicalInfo: body.medicalInfo ?? null, documents: body.documents ?? [] }).returning();
   return res.status(201).json(row);
 });
@@ -302,7 +519,30 @@ router.get("/parent/applications", requireAuth, async (req: AuthRequest, res) =>
 
 router.post("/parent/apply-for-child", requireAuth, async (req: AuthRequest, res) => {
   if (req.user!.role !== "parent") return res.status(403).json({ message: "Not allowed" });
-  const body = z.object({ childId: z.string(), schoolId: z.string(), classId: z.string(), documents: z.array(z.string()) }).parse(req.body);
+  const body = z
+    .object({
+      childId: z.string(),
+      schoolId: z.string(),
+      classId: z.string(),
+      documents: documentsSchema,
+    })
+    .parse(req.body);
+
+  const [school] = await db.select().from(schools).where(eq(schools.id, body.schoolId)).limit(1);
+  if (!school) return res.status(404).json({ message: "School not found" });
+  if (!school.enrollmentOpen || !school.parentApplicationsEnabled) {
+    return res.status(400).json({ message: "School is not currently accepting parent applications" });
+  }
+
+  const [cls] = await db
+    .select({ id: schoolClasses.id })
+    .from(schoolClasses)
+    .where(and(eq(schoolClasses.id, body.classId), eq(schoolClasses.schoolId, body.schoolId)))
+    .limit(1);
+  if (!cls) {
+    return res.status(400).json({ message: "Invalid classId" });
+  }
+
   const [row] = await db.insert(enrollmentApplications).values({ type: "parent_student", schoolId: body.schoolId, applicantUserId: req.user!.id, status: "submitted", classId: body.classId, pendingStudentProfileId: body.childId, payload: { documents: body.documents } }).returning();
   return res.status(201).json(row);
 });
@@ -316,8 +556,58 @@ router.get("/employee/applications", requireAuth, async (req: AuthRequest, res) 
 
 router.post("/employee/apply", requireAuth, async (req: AuthRequest, res) => {
   if (req.user!.role !== "employee") return res.status(403).json({ message: "Not allowed" });
-  const body = z.object({ schoolId: z.string(), desiredSubRole: z.string(), experience: z.string(), qualifications: z.string(), previousEmployment: z.string().optional(), references: z.string().optional(), coverLetter: z.string().optional(), documents: z.array(z.string()) }).parse(req.body);
-  const [row] = await db.insert(enrollmentApplications).values({ type: "employee", schoolId: body.schoolId, applicantUserId: req.user!.id, status: "submitted", payload: { ...body } }).returning();
+  const body = z
+    .object({
+      schoolId: z.string(),
+      desiredSubRole: z.string(),
+      customSubRoleName: z.string().optional(),
+      experience: z.string(),
+      qualifications: z.string(),
+      previousEmployment: z.string().optional(),
+      references: z.string().optional(),
+      coverLetter: z.string().optional(),
+      documents: documentsSchema,
+    })
+    .parse(req.body);
+
+  const [school] = await db.select().from(schools).where(eq(schools.id, body.schoolId)).limit(1);
+  if (!school) return res.status(404).json({ message: "School not found" });
+  if (!school.enrollmentOpen || !school.staffApplicationsEnabled) {
+    return res.status(400).json({ message: "School is not currently accepting staff applications" });
+  }
+
+  const desiredKey = String(body.desiredSubRole || "").trim();
+  const wantsOther = desiredKey === "other";
+
+  let desiredSubRoleId: string | null = null;
+  if (!wantsOther) {
+    const [subRoleRow] = await db
+      .select({ id: employeeSubRoles.id })
+      .from(employeeSubRoles)
+      .where(and(eq(employeeSubRoles.schoolId, body.schoolId), eq(employeeSubRoles.key, desiredKey)))
+      .limit(1);
+    if (!subRoleRow) {
+      return res.status(400).json({ message: "Invalid desiredSubRole" });
+    }
+    desiredSubRoleId = subRoleRow.id;
+  } else {
+    const customName = String(body.customSubRoleName || "").trim();
+    if (!customName) {
+      return res.status(400).json({ message: "customSubRoleName is required when desiredSubRole is 'other'" });
+    }
+  }
+
+  const [row] = await db
+    .insert(enrollmentApplications)
+    .values({
+      type: "employee",
+      schoolId: body.schoolId,
+      applicantUserId: req.user!.id,
+      status: "submitted",
+      desiredSubRoleId,
+      payload: { ...body, desiredSubRole: desiredKey },
+    })
+    .returning();
   return res.status(201).json(row);
 });
 
@@ -327,6 +617,9 @@ const enrollmentStatusSchema = z.enum(["active", "promoted", "graduated", "pendi
 // 🔧 AUTOMATED ENROLLMENT WORKFLOW
 router.post("/auto-enroll", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
+    if (req.user!.role !== "admin") {
+      return res.status(403).json({ message: "Not allowed" });
+    }
     const schoolId = req.user!.schoolId!;
     
     // 🔍 FIND ALL ORPHANED STUDENTS
@@ -492,6 +785,9 @@ router.post("/auto-enroll", requireAuth, requireTenantAccess, async (req: AuthRe
 // 📊 ENROLLMENT DASHBOARD
 router.get("/dashboard", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
+    if (req.user!.role !== "admin" && req.user!.role !== "employee") {
+      return res.status(403).json({ message: "Not allowed" });
+    }
     const schoolId = req.user!.schoolId!;
     
     // 📈 GET ENROLLMENT STATISTICS
@@ -592,6 +888,9 @@ router.get("/dashboard", requireAuth, requireTenantAccess, async (req: AuthReque
 // 🔧 PROMOTE STUDENTS (YEAR END)
 router.post("/promote", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
+    if (req.user!.role !== "admin") {
+      return res.status(403).json({ message: "Not allowed" });
+    }
     const schoolId = req.user!.schoolId!;
     const { targetYearId } = req.body;
     

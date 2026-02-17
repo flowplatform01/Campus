@@ -26,9 +26,12 @@ export default function CampusUserInfoPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold">User Info</h1>
-            <p className="text-muted-foreground">Printable profile summary</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">User Info</h1>
+              <p className="text-muted-foreground">Printable profile summary</p>
+            </div>
           </div>
           <Button onClick={() => window.print()} className="gap-2">
             <Printer className="h-4 w-4" />

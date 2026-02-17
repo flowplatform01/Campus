@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "../db.js";
@@ -18,6 +18,7 @@ import {
   enrollmentApplications,
   subjects,
   subRolePermissionGrants,
+  userPermissionOverrides,
   smsAchievements,
   smsStudentAchievements,
   smsAssignments,
@@ -36,13 +37,16 @@ import {
   smsInvoices,
   smsPaymentSettings,
   smsPayments,
+  smsReportPublications,
   smsResources,
   timetablePublications,
   timetableSlots,
+  subjectTeacherAssignments,
   users,
 } from "@shared/schema";
 import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } from "../middleware/auth.js";
 import { logAudit } from "../services/audit-service.js";
+import { deleteAsset } from "../services/smart-storage.js";
 
 const router = Router();
 
@@ -140,6 +144,36 @@ function requireAdmin(req: AuthRequest, res: any): string | null {
   return schoolId;
 }
 
+async function ensureTeacherAttendanceAccess(params: {
+  user: NonNullable<AuthRequest["user"]>;
+  schoolId: string;
+  academicYearId: string;
+  classId: string;
+  sectionId: string | null;
+  subjectId: string;
+}): Promise<boolean> {
+  const { user, schoolId, academicYearId, classId, sectionId, subjectId } = params;
+  if (user.role === "admin") return true;
+  if (user.role !== "employee") return false;
+
+  const [assignment] = await db
+    .select({ id: subjectTeacherAssignments.id })
+    .from(subjectTeacherAssignments)
+    .where(
+      and(
+        eq(subjectTeacherAssignments.schoolId, schoolId),
+        eq(subjectTeacherAssignments.academicYearId, academicYearId),
+        eq(subjectTeacherAssignments.teacherId, user.id),
+        eq(subjectTeacherAssignments.subjectId, subjectId),
+        eq(subjectTeacherAssignments.classId, classId),
+        sectionId ? eq(subjectTeacherAssignments.sectionId, sectionId) : isNull(subjectTeacherAssignments.sectionId)
+      )
+    )
+    .limit(1);
+
+  return !!assignment;
+}
+
 function requireStaff(req: AuthRequest, res: any): string | null {
   if (!req.user) {
     res.status(401).json({ message: "Authentication required" });
@@ -168,6 +202,75 @@ function requireAnyAuth(req: AuthRequest, res: any): string | null {
     return null;
   }
   return schoolId;
+}
+
+async function employeeHasPermission(params: {
+  user: NonNullable<AuthRequest["user"]>;
+  schoolId: string;
+  permissionKey: string;
+}): Promise<boolean> {
+  const { user, schoolId, permissionKey } = params;
+  if (user.role === "admin") return true;
+  if (user.role !== "employee") return false;
+  if (!user.subRole) return false;
+
+  const [override] = await db
+    .select({ allowed: userPermissionOverrides.allowed })
+    .from(userPermissionOverrides)
+    .where(
+      and(
+        eq(userPermissionOverrides.schoolId, schoolId),
+        eq(userPermissionOverrides.userId, user.id),
+        eq(userPermissionOverrides.permissionKey, permissionKey)
+      )
+    )
+    .limit(1);
+  if (override) return !!override.allowed;
+
+  const [subRole] = await db
+    .select({ id: employeeSubRoles.id })
+    .from(employeeSubRoles)
+    .where(and(eq(employeeSubRoles.schoolId, schoolId), eq(employeeSubRoles.key, user.subRole)))
+    .limit(1);
+  if (!subRole) return false;
+
+  const [grant] = await db
+    .select({ id: subRolePermissionGrants.id })
+    .from(subRolePermissionGrants)
+    .where(
+      and(
+        eq(subRolePermissionGrants.schoolId, schoolId),
+        eq(subRolePermissionGrants.subRoleId, subRole.id),
+        eq(subRolePermissionGrants.permissionKey, permissionKey)
+      )
+    )
+    .limit(1);
+  return !!grant;
+}
+
+async function requireEmployeePermission(req: AuthRequest, res: any, permissionKey: string): Promise<boolean> {
+  const user = req.user;
+  if (!user) {
+    res.status(401).json({ message: "Authentication required" });
+    return false;
+  }
+  if (user.role === "admin") return true;
+  if (user.role !== "employee") {
+    res.status(403).json({ message: "Not allowed" });
+    return false;
+  }
+  const schoolId = user.schoolId ?? null;
+  if (!schoolId) {
+    res.status(400).json({ message: "User is not linked to a school" });
+    return false;
+  }
+
+  const ok = await employeeHasPermission({ user, schoolId, permissionKey });
+  if (!ok) {
+    res.status(403).json({ message: "Missing permission" });
+    return false;
+  }
+  return true;
 }
 
 const academicYearCreateSchema = z.object({
@@ -253,6 +356,14 @@ router.get("/attendance/roster", requireAuth, requireTenantAccess, async (req: A
     return res.status(400).json({ message: "academicYearId and classId are required" });
   }
 
+  const whereParts = [
+    eq(studentEnrollments.schoolId, schoolId),
+    eq(studentEnrollments.academicYearId, academicYearId),
+    eq(studentEnrollments.classId, classId),
+    eq(studentEnrollments.status, "active"),
+  ];
+  if (sectionId) whereParts.push(eq(studentEnrollments.sectionId, sectionId));
+
   const rows = await db
     .select({
       enrollmentId: studentEnrollments.id,
@@ -264,15 +375,7 @@ router.get("/attendance/roster", requireAuth, requireTenantAccess, async (req: A
     })
     .from(studentEnrollments)
     .innerJoin(users, eq(users.id, studentEnrollments.studentId))
-    .where(
-      and(
-        eq(studentEnrollments.schoolId, schoolId),
-        eq(studentEnrollments.academicYearId, academicYearId),
-        eq(studentEnrollments.classId, classId),
-        eq(studentEnrollments.status, "active"),
-        sectionId ? eq(studentEnrollments.sectionId, sectionId) : isNull(studentEnrollments.sectionId)
-      )
-    )
+    .where(and(...whereParts))
     .orderBy(users.name);
 
   return res.json(rows);
@@ -291,6 +394,25 @@ router.post("/attendance/sessions", requireAuth, requireTenantAccess, async (req
     const sectionId = body.sectionId ?? null;
     const subjectId = body.subjectId ?? null;
     const date = new Date(body.date);
+
+    // Teachers must mark attendance only for assigned class+subject(+section).
+    // Require subjectId for employees to avoid marking generic attendance for unrelated classes.
+    if (user.role === "employee") {
+      if (!subjectId) {
+        return res.status(400).json({ message: "subjectId is required" });
+      }
+      const allowed = await ensureTeacherAttendanceAccess({
+        user,
+        schoolId,
+        academicYearId: body.academicYearId,
+        classId: body.classId,
+        sectionId,
+        subjectId,
+      });
+      if (!allowed) {
+        return res.status(403).json({ message: "Not authorized to mark attendance for this subject/class" });
+      }
+    }
 
     const [existing] = await db
       .select()
@@ -379,6 +501,24 @@ router.post("/attendance/sessions/:id/entries", requireAuth, requireTenantAccess
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.status !== "draft") return res.status(409).json({ message: "Session is not editable" });
 
+    if (user.role === "employee" && session.markedBy !== user.id) {
+      return res.status(403).json({ message: "Not authorized to edit this session" });
+    }
+
+    if (user.role === "employee") {
+      const allowed = await ensureTeacherAttendanceAccess({
+        user,
+        schoolId,
+        academicYearId: session.academicYearId,
+        classId: session.classId,
+        sectionId: session.sectionId ?? null,
+        subjectId: session.subjectId ?? "",
+      });
+      if (!session.subjectId || !allowed) {
+        return res.status(403).json({ message: "Not authorized to mark attendance for this subject/class" });
+      }
+    }
+
     const studentIds = Array.from(new Set(body.entries.map((e) => e.studentId)));
     const existing = await db
       .select()
@@ -462,6 +602,24 @@ router.post("/attendance/sessions/:id/submit", requireAuth, requireTenantAccess,
     .limit(1);
   if (!session) return res.status(404).json({ message: "Session not found" });
   if (session.status !== "draft") return res.status(409).json({ message: "Session cannot be submitted" });
+
+  if (user.role === "employee" && session.markedBy !== user.id) {
+    return res.status(403).json({ message: "Not authorized to submit this session" });
+  }
+
+  if (user.role === "employee") {
+    const allowed = await ensureTeacherAttendanceAccess({
+      user,
+      schoolId,
+      academicYearId: session.academicYearId,
+      classId: session.classId,
+      sectionId: session.sectionId ?? null,
+      subjectId: session.subjectId ?? "",
+    });
+    if (!session.subjectId || !allowed) {
+      return res.status(403).json({ message: "Not authorized to submit attendance for this subject/class" });
+    }
+  }
 
   const [row] = await db
     .update(smsAttendanceSessions)
@@ -623,7 +781,7 @@ router.get("/attendance/sessions/:id/entries", requireAuth, requireTenantAccess,
       })
       .from(smsAttendanceEntries)
       .innerJoin(users, eq(users.id, smsAttendanceEntries.studentId))
-      .where(eq(smsAttendanceEntries.sessionId, sessionId));
+      .where(and(eq(smsAttendanceEntries.sessionId, sessionId), eq(smsAttendanceEntries.schoolId, schoolId)));
 
     const entries = await query.orderBy(users.name);
     return res.json(entries);
@@ -668,7 +826,7 @@ router.get("/reports/summary", requireAuth, requireTenantAccess, async (req: Aut
     await db
       .select({ count: sql<number>`count(*)` })
       .from(admissions)
-      .where(and(eq(admissions.schoolId, schoolId), eq(admissions.status, "pending")))
+      .where(and(eq(admissions.schoolId, schoolId), eq(admissions.status, "submitted")))
   )[0];
   const admissionsPending = admissionsPendingRow?.count ?? 0;
 
@@ -722,6 +880,237 @@ router.get("/reports/summary", requireAuth, requireTenantAccess, async (req: Aut
   });
 });
 
+// ============ Report Card Publishing & Distribution ============
+
+const reportPublicationCreateSchema = z
+  .object({
+    scopeType: z.enum(["student", "class", "exam", "term", "academic_year"]),
+    academicYearId: z.string().optional(),
+    termId: z.string().optional(),
+    examId: z.string().optional(),
+    classId: z.string().optional(),
+    studentId: z.string().optional(),
+    status: z.enum(["draft", "reviewed", "published"]).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.academicYearId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "academicYearId is required" });
+    }
+    if (!v.termId && v.scopeType !== "academic_year") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "termId is required" });
+    }
+    if (v.scopeType === "student" && !v.studentId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "studentId is required for student scope" });
+    }
+    if (v.scopeType === "class" && !v.classId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "classId is required for class scope" });
+    }
+    if (v.scopeType === "exam" && !v.examId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "examId is required for exam scope" });
+    }
+  });
+
+router.get("/reports/publications", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  const user = req.user!;
+  const schoolId = user.schoolId ?? null;
+  if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+  if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Forbidden" });
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "view_reports");
+    if (!ok) return;
+  }
+
+  const rows = await db
+    .select()
+    .from(smsReportPublications)
+    .where(eq(smsReportPublications.schoolId, schoolId))
+    .orderBy(desc(smsReportPublications.updatedAt))
+    .limit(200);
+  return res.json(rows);
+});
+
+router.post("/reports/publications", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  try {
+    const user = req.user!;
+    const schoolId = user.schoolId ?? null;
+    if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+    if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Forbidden" });
+    if (user.role === "employee") {
+      const ok = await requireEmployeePermission(req, res, "generate_reports");
+      if (!ok) return;
+    }
+
+    const body = reportPublicationCreateSchema.parse(req.body);
+    const status = body.status ?? "draft";
+
+    const [row] = await db
+      .insert(smsReportPublications)
+      .values({
+        schoolId,
+        scopeType: body.scopeType,
+        academicYearId: body.academicYearId ?? null,
+        termId: body.termId ?? null,
+        examId: body.examId ?? null,
+        classId: body.classId ?? null,
+        studentId: body.studentId ?? null,
+        status,
+        publishedAt: status === "published" ? new Date() : null,
+        createdBy: user.id,
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return res.status(201).json(row);
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input", errors: e.errors });
+    console.error(e);
+    return res.status(500).json({ message: "Failed to create publication" });
+  }
+});
+
+router.patch("/reports/publications/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  try {
+    const user = req.user!;
+    const schoolId = user.schoolId ?? null;
+    if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+    if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Forbidden" });
+    if (user.role === "employee") {
+      const ok = await requireEmployeePermission(req, res, "generate_reports");
+      if (!ok) return;
+    }
+
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ message: "ID is required" });
+
+    const body = z
+      .object({
+        status: z.enum(["draft", "reviewed", "published"]),
+      })
+      .parse(req.body);
+
+    const [row] = await db
+      .update(smsReportPublications)
+      .set({
+        status: body.status,
+        publishedAt: body.status === "published" ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(smsReportPublications.id, id), eq(smsReportPublications.schoolId, schoolId)))
+      .returning();
+
+    if (!row) return res.status(404).json({ message: "Publication not found" });
+    return res.json(row);
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input", errors: e.errors });
+    console.error(e);
+    return res.status(500).json({ message: "Failed to update publication" });
+  }
+});
+
+// Student/Parent distribution: list published report cards in scope
+router.get("/reports/my", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  const user = req.user!;
+  const schoolId = user.schoolId ?? null;
+  if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+
+  let studentIds: string[] = [];
+  if (user.role === "student") {
+    studentIds = [user.id];
+  } else if (user.role === "parent") {
+    const links = await db.select({ childId: parentChildren.childId }).from(parentChildren).where(eq(parentChildren.parentId, user.id));
+    studentIds = links.map((l) => l.childId);
+  } else {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  if (studentIds.length === 0) return res.json([]);
+
+  const enrollments = await db
+    .select({
+      studentId: studentEnrollments.studentId,
+      academicYearId: studentEnrollments.academicYearId,
+      termId: studentEnrollments.termId,
+      classId: studentEnrollments.classId,
+    })
+    .from(studentEnrollments)
+    .where(and(eq(studentEnrollments.schoolId, schoolId), inArray(studentEnrollments.studentId, studentIds), eq(studentEnrollments.status, "active")))
+    .orderBy(desc(studentEnrollments.createdAt));
+
+  const byStudent = new Map<string, { academicYearId: string | null; termId: string | null; classId: string | null }>();
+  for (const e of enrollments) {
+    if (!byStudent.has(e.studentId)) {
+      byStudent.set(e.studentId, { academicYearId: e.academicYearId ?? null, termId: e.termId ?? null, classId: e.classId ?? null });
+    }
+  }
+
+  const yearIds = Array.from(new Set(Array.from(byStudent.values()).map((v) => v.academicYearId).filter(Boolean))) as string[];
+  const termIds = Array.from(new Set(Array.from(byStudent.values()).map((v) => v.termId).filter(Boolean))) as string[];
+  const classIds = Array.from(new Set(Array.from(byStudent.values()).map((v) => v.classId).filter(Boolean))) as string[];
+
+  const rows = await db
+    .select()
+    .from(smsReportPublications)
+    .where(
+      and(
+        eq(smsReportPublications.schoolId, schoolId),
+        eq(smsReportPublications.status, "published"),
+        or(
+          inArray(smsReportPublications.studentId, studentIds),
+          classIds.length ? and(eq(smsReportPublications.scopeType, "class"), inArray(smsReportPublications.classId, classIds)) : undefined,
+          termIds.length ? and(eq(smsReportPublications.scopeType, "term"), inArray(smsReportPublications.termId, termIds)) : undefined,
+          yearIds.length ? and(eq(smsReportPublications.scopeType, "academic_year"), inArray(smsReportPublications.academicYearId, yearIds)) : undefined
+        )
+      )
+    )
+    .orderBy(desc(smsReportPublications.publishedAt))
+    .limit(200);
+  return res.json(rows);
+});
+
+// Secure download wrapper: verifies publication is published + belongs to user, then redirects to export generator
+router.get("/reports/my/:publicationId/pdf", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  const user = req.user!;
+  const schoolId = user.schoolId ?? null;
+  if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+  if (user.role !== "student" && user.role !== "parent") return res.status(403).json({ message: "Forbidden" });
+
+  const publicationId = z.string().min(1).parse(req.params.publicationId);
+  const [pub] = await db
+    .select()
+    .from(smsReportPublications)
+    .where(and(eq(smsReportPublications.id, publicationId), eq(smsReportPublications.schoolId, schoolId)))
+    .limit(1);
+  if (!pub) return res.status(404).json({ message: "Publication not found" });
+  if (pub.status !== "published") return res.status(403).json({ message: "Report is not published" });
+
+  const targetStudentId = pub.studentId
+    ? pub.studentId
+    : user.role === "student"
+      ? user.id
+      : (req.query.childId as string | undefined) ?? null;
+
+  if (!targetStudentId) {
+    return res.status(400).json({ message: "childId is required for parent downloads of class/term/year publications" });
+  }
+
+  if (user.role === "student") {
+    if (targetStudentId !== user.id) return res.status(403).json({ message: "Forbidden" });
+  } else {
+    const [link] = await db
+      .select({ id: parentChildren.id })
+      .from(parentChildren)
+      .where(and(eq(parentChildren.parentId, user.id), eq(parentChildren.childId, targetStudentId)))
+      .limit(1);
+    if (!link) return res.status(403).json({ message: "Forbidden" });
+  }
+
+  const academicYearId = pub.academicYearId ?? "";
+  const termId = pub.termId ?? "";
+  if (!academicYearId || !termId) return res.status(400).json({ message: "Publication scope incomplete" });
+
+  const params = new URLSearchParams({ academicYearId, termId });
+  return res.redirect(`/api/export/student/${encodeURIComponent(targetStudentId)}/pdf?${params.toString()}`);
+});
+
 router.get("/resources", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
@@ -739,7 +1128,12 @@ router.get("/resources", requireAuth, requireTenantAccess, async (req: AuthReque
 const resourceCreateSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  url: z.string().min(1),
+  url: z
+    .string()
+    .min(1)
+    .refine((v) => typeof v === "string" && !v.includes("://") && v.startsWith("resource_file/"), {
+      message: "Invalid resource file key",
+    }),
   academicYearId: z.string().optional().or(z.literal("")),
   classId: z.string().optional().or(z.literal("")),
   sectionId: z.string().optional().or(z.literal("")),
@@ -771,7 +1165,7 @@ router.post("/resources", requireAuth, requireTenantAccess, async (req: AuthRequ
         title: body.title,
         description: body.description ?? null,
         url: body.url,
-        type: "link",
+        type: "file",
         uploadedBy: user.id,
       })
       .returning();
@@ -796,9 +1190,18 @@ router.delete("/resources/:id", requireAuth, requireTenantAccess, async (req: Au
   const resourceId = req.params.id;
   if (!resourceId) return res.status(400).json({ message: "Resource ID is required" });
 
-  await db
-    .delete(smsResources)
-    .where(and(eq(smsResources.id, resourceId), eq(smsResources.schoolId, schoolId)));
+  const [existing] = await db
+    .select()
+    .from(smsResources)
+    .where(and(eq(smsResources.id, resourceId), eq(smsResources.schoolId, schoolId)))
+    .limit(1);
+
+  await db.delete(smsResources).where(and(eq(smsResources.id, resourceId), eq(smsResources.schoolId, schoolId)));
+
+  if (existing?.type === "file" && typeof existing.url === "string" && existing.url.startsWith("resource_file/")) {
+    await deleteAsset("resource_file", existing.url, "backblaze");
+  }
+
   return res.json({ message: "Deleted" });
 });
 
@@ -825,6 +1228,10 @@ router.post("/payments/fee-heads", requireAuth, requireTenantAccess, async (req:
     if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
     if (user.role !== "admin" && user.role !== "employee") {
       return res.status(403).json({ message: "Not allowed" });
+    }
+    if (user.role === "employee") {
+      const ok = await requireEmployeePermission(req, res, "manage_school_settings");
+      if (!ok) return;
     }
 
     const body = feeHeadCreateSchema.parse(req.body);
@@ -863,19 +1270,27 @@ router.patch("/payments/settings", requireAuth, requireTenantAccess, async (req:
     const body = paymentSettingsUpdateSchema.parse(req.body);
     const [existing] = await db.select().from(smsPaymentSettings).where(eq(smsPaymentSettings.schoolId, schoolId)).limit(1);
     const now = new Date();
+    const returningCols = {
+      id: smsPaymentSettings.id,
+      schoolId: smsPaymentSettings.schoolId,
+      currency: smsPaymentSettings.currency,
+      methods: smsPaymentSettings.methods,
+      updatedAt: smsPaymentSettings.updatedAt,
+    };
+
     const row = existing
       ? (
           await db
             .update(smsPaymentSettings)
             .set({ ...body, updatedAt: now })
             .where(eq(smsPaymentSettings.id, existing.id))
-            .returning()
+            .returning(returningCols)
         )[0]
       : (
           await db
             .insert(smsPaymentSettings)
             .values({ schoolId, currency: body.currency ?? "USD", methods: body.methods ?? [], updatedAt: now })
-            .returning()
+            .returning(returningCols)
         )[0];
     return res.json(row);
   } catch (e) {
@@ -889,6 +1304,11 @@ router.get("/payments/invoices", requireAuth, requireTenantAccess, async (req: A
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "view_payments");
+    if (!ok) return;
+  }
 
   // PARENTS: Only see invoices for their linked children
   // STUDENTS: Only see their own invoices
@@ -924,9 +1344,9 @@ router.get("/payments/invoices", requireAuth, requireTenantAccess, async (req: A
       createdBy: smsInvoices.createdBy,
       createdAt: smsInvoices.createdAt,
       displayName: sql<string>`coalesce(
-        (select fh.name from sms_invoice_lines l left join sms_fee_heads fh on fh.id = l.fee_head_id where l.invoice_id = ${smsInvoices.id} limit 1),
-        (select l.description from sms_invoice_lines l where l.invoice_id = ${smsInvoices.id} limit 1),
-        ${smsInvoices.id}
+        (select fh.name from sms_invoice_lines l left join sms_fee_heads fh on fh.id = l.fee_head_id where l.invoice_id = ${sql.raw('"sms_invoices"."id"')} limit 1),
+        (select l.description from sms_invoice_lines l where l.invoice_id = ${sql.raw('"sms_invoices"."id"')} limit 1),
+        ${sql.raw('"sms_invoices"."id"')}
       )`.as('displayName'),
     })
     .from(smsInvoices)
@@ -941,6 +1361,11 @@ router.get("/payments/invoices/:id", requireAuth, requireTenantAccess, async (re
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
 
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "view_payments");
+    if (!ok) return;
+  }
+
   const invoiceId = req.params.id;
   if (!invoiceId) return res.status(400).json({ message: "Invoice ID is required" });
 
@@ -951,6 +1376,17 @@ router.get("/payments/invoices/:id", requireAuth, requireTenantAccess, async (re
     .limit(1);
   if (!invoice) return res.status(404).json({ message: "Invoice not found" });
   if (user.role === "student" && invoice.studentId !== user.id) return res.status(403).json({ message: "Forbidden" });
+
+  if (user.role === "parent") {
+    const links = await db
+      .select({ childId: parentChildren.childId })
+      .from(parentChildren)
+      .where(eq(parentChildren.parentId, user.id));
+    const childIds = links.map((l) => l.childId);
+    if (!childIds.includes(invoice.studentId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+  }
 
   const lines = await db
     .select()
@@ -973,7 +1409,7 @@ const invoiceCreateSchema = z.object({
   notes: z.string().optional(),
   lines: z.array(
     z.object({
-      feeHeadId: z.string().min(1),
+      feeHeadId: z.string().optional().or(z.literal("")),
       description: z.string().min(1),
       amount: z.number().int().positive(),
     })
@@ -1011,13 +1447,34 @@ router.post("/payments/invoices", requireAuth, requireTenantAccess, async (req: 
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
     if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
-    if (user.role !== "admin" && user.role !== "employee") {
-      return res.status(403).json({ message: "Not allowed" });
+    if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Not allowed" });
+    if (user.role === "employee") {
+      const ok = await requireEmployeePermission(req, res, "create_invoices");
+      if (!ok) return;
     }
 
     const body = invoiceCreateSchema.parse(req.body);
     const academicYearId = body.academicYearId ? body.academicYearId : null;
     const termId = body.termId ? body.termId : null;
+
+    const feeHeadIds = Array.from(
+      new Set(
+        (body.lines || [])
+          .map((l) => (typeof l.feeHeadId === "string" ? l.feeHeadId.trim() : ""))
+          .filter((id) => !!id)
+      )
+    );
+    if (feeHeadIds.length > 0) {
+      const rows = await db
+        .select({ id: smsFeeHeads.id })
+        .from(smsFeeHeads)
+        .where(and(eq(smsFeeHeads.schoolId, schoolId), inArray(smsFeeHeads.id, feeHeadIds)));
+      const found = new Set(rows.map((r) => r.id));
+      const missing = feeHeadIds.filter((id) => !found.has(id));
+      if (missing.length > 0) {
+        return res.status(400).json({ message: "Invalid feeHeadId", missing });
+      }
+    }
 
     const [invoice] = await db
       .insert(smsInvoices)
@@ -1040,7 +1497,7 @@ router.post("/payments/invoices", requireAuth, requireTenantAccess, async (req: 
     const lineRows = body.lines.map((l) => ({
       invoiceId: invoice.id,
       schoolId,
-      feeHeadId: l.feeHeadId ? l.feeHeadId : null,
+      feeHeadId: l.feeHeadId ? String(l.feeHeadId).trim() || null : null,
       description: l.description,
       amount: l.amount,
     }));
@@ -1060,8 +1517,10 @@ router.post("/payments/invoices/bulk", requireAuth, requireTenantAccess, async (
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
     if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
-    if (user.role !== "admin" && user.role !== "employee") {
-      return res.status(403).json({ message: "Not allowed" });
+    if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Not allowed" });
+    if (user.role === "employee") {
+      const ok = await requireEmployeePermission(req, res, "create_invoices");
+      if (!ok) return;
     }
 
     const body = invoiceBulkCreateSchema.parse(req.body);
@@ -1069,6 +1528,25 @@ router.post("/payments/invoices/bulk", requireAuth, requireTenantAccess, async (
     const termId = body.termId ? body.termId : null;
     const dueAt = body.dueAt ? new Date(body.dueAt) : null;
     const notes = body.notes ?? null;
+
+    const feeHeadIds = Array.from(
+      new Set(
+        (body.lines || [])
+          .map((l) => (typeof l.feeHeadId === "string" ? l.feeHeadId.trim() : ""))
+          .filter((id) => !!id)
+      )
+    );
+    if (feeHeadIds.length > 0) {
+      const rows = await db
+        .select({ id: smsFeeHeads.id })
+        .from(smsFeeHeads)
+        .where(and(eq(smsFeeHeads.schoolId, schoolId), inArray(smsFeeHeads.id, feeHeadIds)));
+      const found = new Set(rows.map((r) => r.id));
+      const missing = feeHeadIds.filter((id) => !found.has(id));
+      if (missing.length > 0) {
+        return res.status(400).json({ message: "Invalid feeHeadId", missing });
+      }
+    }
 
     const created = await db.transaction(async (tx) => {
       const createdInvoices = [] as any[];
@@ -1094,7 +1572,7 @@ router.post("/payments/invoices/bulk", requireAuth, requireTenantAccess, async (
         const lineRows = body.lines.map((l) => ({
           invoiceId: invoice.id,
           schoolId,
-          feeHeadId: l.feeHeadId ? l.feeHeadId : null,
+          feeHeadId: l.feeHeadId ? String(l.feeHeadId).trim() || null : null,
           description: l.description,
           amount: l.amount,
         }));
@@ -1134,17 +1612,47 @@ router.post("/payments/payments", requireAuth, requireTenantAccess, async (req: 
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
     if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
-    if (user.role !== "admin" && user.role !== "employee") {
-      return res.status(403).json({ message: "Not allowed" });
+    if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Not allowed" });
+    if (user.role === "employee") {
+      const ok = await requireEmployeePermission(req, res, "process_payments");
+      if (!ok) return;
     }
 
     const body = paymentCreateSchema.parse(req.body);
+
+    const [settings] = await db
+      .select()
+      .from(smsPaymentSettings)
+      .where(eq(smsPaymentSettings.schoolId, schoolId))
+      .limit(1);
+    if (settings && Array.isArray(settings.methods) && settings.methods.length > 0) {
+      if (!settings.methods.includes(body.method)) {
+        return res.status(400).json({ message: "Payment method is not enabled" });
+      }
+    }
+
     const [invoice] = await db
       .select()
       .from(smsInvoices)
       .where(and(eq(smsInvoices.schoolId, schoolId), eq(smsInvoices.id, body.invoiceId)))
       .limit(1);
     if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+
+    const lineAmounts = await db
+      .select({ amount: smsInvoiceLines.amount })
+      .from(smsInvoiceLines)
+      .where(and(eq(smsInvoiceLines.schoolId, schoolId), eq(smsInvoiceLines.invoiceId, invoice.id)));
+    const subtotal = lineAmounts.reduce((acc, l) => acc + (l.amount ?? 0), 0);
+
+    const paidAmounts = await db
+      .select({ amount: smsPayments.amount })
+      .from(smsPayments)
+      .where(and(eq(smsPayments.schoolId, schoolId), eq(smsPayments.invoiceId, invoice.id)));
+    const alreadyPaid = paidAmounts.reduce((acc, p) => acc + (p.amount ?? 0), 0);
+    const remaining = Math.max(subtotal - alreadyPaid, 0);
+    if (body.amount > remaining) {
+      return res.status(400).json({ message: `Payment amount exceeds remaining balance (${remaining})` });
+    }
 
     const [row] = await db
       .insert(smsPayments)
@@ -1159,6 +1667,10 @@ router.post("/payments/payments", requireAuth, requireTenantAccess, async (req: 
         recordedBy: user.id,
       })
       .returning();
+
+    if (!row) {
+      return res.status(500).json({ message: "Failed to record payment" });
+    }
 
     const updatedInvoice = await recomputeInvoiceTotals(schoolId, invoice.id);
     await logAudit({
@@ -1183,6 +1695,11 @@ router.get("/payments/students/:id/balance", requireAuth, requireTenantAccess, a
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
   const studentId = req.params.id;
   if (!studentId) return res.status(400).json({ message: "Student ID is required" });
+
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "view_payments");
+    if (!ok) return;
+  }
   
   // PARENTS: Can only view balance for their linked children
   if (user.role === "parent") {
@@ -1217,6 +1734,10 @@ router.get("/payments/students/:id/balance", requireAuth, requireTenantAccess, a
 
 // ============ Assignments Workflow ============
 
+function isSafeAssetKey(expectedPrefix: string, value: string) {
+  return typeof value === "string" && value.length > 0 && value.startsWith(expectedPrefix) && !value.includes("://");
+}
+
 const assignmentCreateSchema = z.object({
   academicYearId: z.string().min(1),
   termId: z.string().min(1),
@@ -1227,7 +1748,12 @@ const assignmentCreateSchema = z.object({
   instructions: z.string().min(1),
   dueAt: z.string().datetime(),
   maxScore: z.number().int().positive(),
-  attachmentUrl: z.string().optional(),
+  attachmentUrl: z
+    .string()
+    .optional()
+    .refine((v) => !v || isSafeAssetKey("assignment_attachment/", v), {
+      message: "Invalid attachment key",
+    }),
 });
 
 router.get("/assignments", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
@@ -1357,6 +1883,10 @@ router.post("/assignments/:id/publish", requireAuth, requireTenantAccess, async 
   if (user.role !== "admin" && user.role !== "employee") {
     return res.status(403).json({ message: "Forbidden" });
   }
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "create_assignments");
+    if (!ok) return;
+  }
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
 
@@ -1377,6 +1907,10 @@ router.post("/assignments/:id/close", requireAuth, requireTenantAccess, async (r
   if (user.role !== "admin" && user.role !== "employee") {
     return res.status(403).json({ message: "Forbidden" });
   }
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "create_assignments");
+    if (!ok) return;
+  }
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
 
@@ -1393,7 +1927,12 @@ router.post("/assignments/:id/close", requireAuth, requireTenantAccess, async (r
 });
 
 const assignmentSubmitSchema = z.object({
-  submissionUrl: z.string().optional(),
+  submissionUrl: z
+    .string()
+    .optional()
+    .refine((v) => !v || isSafeAssetKey("assignment_submission/", v), {
+      message: "Invalid submission key",
+    }),
   submissionText: z.string().optional(),
 });
 
@@ -1460,6 +1999,10 @@ router.post("/assignments/submissions/:id/review", requireAuth, requireTenantAcc
     const user = req.user!;
     if (user.role !== "admin" && user.role !== "employee") {
       return res.status(403).json({ message: "Forbidden" });
+    }
+    if (user.role === "employee") {
+      const ok = await requireEmployeePermission(req, res, "grade_assignments");
+      if (!ok) return;
     }
     const schoolId = user.schoolId ?? null;
     if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -2793,7 +3336,15 @@ router.get("/exams", requireAuth, requireTenantAccess, async (req: AuthRequest, 
 });
 
 router.post("/exams", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
-  const schoolId = requireAdmin(req, res);
+  const user = req.user!;
+  if (user.role !== "admin" && user.role !== "employee") {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "edit_grades");
+    if (!ok) return;
+  }
+  const schoolId = requireStaff(req, res);
   if (!schoolId) return;
   const body = examCreateSchema.parse(req.body);
   const [row] = await db.insert(smsExams).values({
@@ -2834,9 +3385,10 @@ router.get("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: Aut
       subject: { id: subjects.id, name: subjects.name, code: subjects.code },
     })
     .from(smsExamMarks)
+    .innerJoin(smsExams, eq(smsExams.id, smsExamMarks.examId))
     .leftJoin(users, eq(users.id, smsExamMarks.studentId))
     .leftJoin(subjects, eq(subjects.id, smsExamMarks.subjectId))
-    .where(eq(smsExamMarks.examId, examId))
+    .where(and(eq(smsExamMarks.examId, examId), eq(smsExams.schoolId, schoolId)))
     .orderBy(desc(smsExamMarks.updatedAt));
 
   return res.json(rows);
@@ -2845,6 +3397,10 @@ router.get("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: Aut
 router.post("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Forbidden" });
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "edit_grades");
+    if (!ok) return;
+  }
   const examId = req.params.id;
   if (!examId) return res.status(400).json({ message: "Exam ID is required" });
   const schoolId = user.schoolId ?? null;
@@ -3380,14 +3936,30 @@ const expenseCreateSchema = z.object({
 });
 
 router.get("/expenses", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
-  const schoolId = req.user!.schoolId;
+  const user = req.user!;
+  const schoolId = user.schoolId;
   if (!schoolId) return res.status(400).json({ message: "No school linked" });
+  if (user.role !== "admin" && user.role !== "employee") {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "view_reports");
+    if (!ok) return;
+  }
   const rows = await db.select().from(smsExpenses).where(eq(smsExpenses.schoolId, schoolId)).orderBy(desc(smsExpenses.date));
   return res.json(rows);
 });
 
 router.post("/expenses", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
-  const schoolId = requireAdmin(req, res);
+  const user = req.user!;
+  if (user.role !== "admin" && user.role !== "employee") {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "generate_reports");
+    if (!ok) return;
+  }
+  const schoolId = requireStaff(req, res);
   if (!schoolId) return;
   const body = expenseCreateSchema.parse(req.body);
   const [row] = await db.insert(smsExpenses).values({
@@ -3465,16 +4037,60 @@ router.post("/bulk-enrollments", requireAuth, requireTenantAccess, async (req: A
 
     const results = [];
     for (const enrollment of enrollments) {
-      const [newEnrollment] = await db.insert(studentEnrollments).values({
-        schoolId,
-        academicYearId: enrollment.academicYearId,
-        studentId: enrollment.studentId,
-        classId: enrollment.classId,
-        status: enrollment.status || 'active',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }).returning();
-      
+      const academicYearId = String(enrollment.academicYearId || "");
+      const studentId = String(enrollment.studentId || "");
+      const classId = String(enrollment.classId || "");
+      const sectionId = enrollment.sectionId ? String(enrollment.sectionId) : null;
+      const termId = enrollment.termId ? String(enrollment.termId) : null;
+      const status = typeof enrollment.status === "string" ? enrollment.status : "active";
+
+      if (!academicYearId || !studentId || !classId) {
+        return res.status(400).json({ message: "Each enrollment requires academicYearId, studentId, classId" });
+      }
+
+      const [cls] = await db
+        .select({ id: schoolClasses.id })
+        .from(schoolClasses)
+        .where(and(eq(schoolClasses.id, classId), eq(schoolClasses.schoolId, schoolId)))
+        .limit(1);
+      if (!cls) {
+        return res.status(400).json({ message: "Invalid classId" });
+      }
+      if (sectionId) {
+        const [sec] = await db
+          .select({ id: classSections.id })
+          .from(classSections)
+          .where(and(eq(classSections.id, sectionId), eq(classSections.schoolId, schoolId), eq(classSections.classId, classId)))
+          .limit(1);
+        if (!sec) {
+          return res.status(400).json({ message: "Invalid sectionId" });
+        }
+      }
+
+      const [stu] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, studentId), eq(users.schoolId, schoolId), eq(users.role, "student")))
+        .limit(1);
+      if (!stu) {
+        return res.status(400).json({ message: "Invalid studentId" });
+      }
+
+      const [newEnrollment] = await db
+        .insert(studentEnrollments)
+        .values({
+          schoolId,
+          academicYearId,
+          termId,
+          studentId,
+          classId,
+          sectionId,
+          status,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+
       results.push(newEnrollment);
     }
     
@@ -3541,17 +4157,51 @@ router.post("/staff-attendance/sessions/:id/entries", requireAuth, requireTenant
   }
   
   for (const entry of body) {
-    const [row] = await db.insert(smsStaffAttendanceEntries).values({
-      staffId: entry.staffId,
-      status: entry.status,
-      note: entry.note || null,
-      sessionId: sessionId,
-      schoolId,
-      markedBy: req.user!.id,
-    }).onConflictDoUpdate({
-      target: [smsStaffAttendanceEntries.id],
-      set: { status: entry.status, note: entry.note, markedAt: new Date(), markedBy: req.user!.id }
-    }).returning();
+    const [staff] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, entry.staffId), eq(users.schoolId, schoolId), eq(users.role, "employee")))
+      .limit(1);
+    if (!staff) {
+      return res.status(400).json({ message: "Invalid staffId" });
+    }
+
+    const [existing] = await db
+      .select({ id: smsStaffAttendanceEntries.id })
+      .from(smsStaffAttendanceEntries)
+      .where(
+        and(
+          eq(smsStaffAttendanceEntries.schoolId, schoolId),
+          eq(smsStaffAttendanceEntries.sessionId, sessionId),
+          eq(smsStaffAttendanceEntries.staffId, entry.staffId)
+        )
+      )
+      .limit(1);
+
+    const now = new Date();
+    const row = existing
+      ? (
+          await db
+            .update(smsStaffAttendanceEntries)
+            .set({ status: entry.status, note: entry.note || null, markedAt: now, markedBy: req.user!.id })
+            .where(and(eq(smsStaffAttendanceEntries.id, existing.id), eq(smsStaffAttendanceEntries.schoolId, schoolId)))
+            .returning()
+        )[0]
+      : (
+          await db
+            .insert(smsStaffAttendanceEntries)
+            .values({
+              staffId: entry.staffId,
+              status: entry.status,
+              note: entry.note || null,
+              sessionId,
+              schoolId,
+              markedBy: req.user!.id,
+              markedAt: now,
+            })
+            .returning()
+        )[0];
+
     results.push(row);
   }
   return res.json(results);
@@ -3766,18 +4416,20 @@ router.post("/schools/:schoolId/apply", async (req, res) => {
     }
     
     // Check for duplicate application
-    const [existingApplication] = await db
-      .select()
-      .from(admissions)
-      .where(and(
-        eq(admissions.schoolId, schoolId),
-        eq(admissions.studentEmail, body.studentEmail || ''),
-        eq(admissions.status, 'submitted')
-      ))
-      .limit(1);
-    
-    if (existingApplication) {
-      return res.status(400).json({ message: "Application already submitted" });
+    if (body.studentEmail) {
+      const [existingApplication] = await db
+        .select()
+        .from(admissions)
+        .where(and(
+          eq(admissions.schoolId, schoolId),
+          eq(admissions.studentEmail, body.studentEmail),
+          eq(admissions.status, 'submitted')
+        ))
+        .limit(1);
+      
+      if (existingApplication) {
+        return res.status(400).json({ message: "Application already submitted" });
+      }
     }
     
     // Create application

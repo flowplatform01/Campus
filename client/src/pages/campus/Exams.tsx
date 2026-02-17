@@ -32,6 +32,8 @@ export default function CampusExamsPage() {
     enabled: !!activeYear?.id,
   });
 
+  const [selectedExamId, setSelectedExamId] = useState('');
+
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newExam, setNewExam] = useState({
     name: '',
@@ -57,11 +59,16 @@ export default function CampusExamsPage() {
     onError: (e: any) => toast({ title: 'Failed to create exam', description: e.message, variant: 'destructive' })
   });
 
-  const [selectedExamForMarks, setSelectedExamForMarks] = useState<any | null>(null);
+  const selectedExamForMarks = useMemo(() => {
+    const id = String(selectedExamId || '');
+    if (!id) return null;
+    return (exams || []).find((e: any) => String(e?.id) === id) ?? null;
+  }, [exams, selectedExamId]);
+
   const { data: marks, isLoading: isLoadingMarks } = useQuery({
-    queryKey: ['sms-exam-marks', selectedExamForMarks?.id],
-    queryFn: () => api.sms.exams.getMarks(selectedExamForMarks!.id),
-    enabled: !!selectedExamForMarks?.id
+    queryKey: ['sms-exam-marks', selectedExamId || null],
+    queryFn: () => api.sms.exams.getMarks(selectedExamId),
+    enabled: !!selectedExamId
   });
 
   const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
@@ -138,7 +145,7 @@ export default function CampusExamsPage() {
   }, [marks]);
 
   const exportMarksCsv = () => {
-    if (!selectedExamForMarks?.id) return;
+    if (!selectedExamId) return;
     const list = (marks || []) as any[];
     const rows = list.map((m) => {
       const studentName = String(m?.student?.name || '');
@@ -164,7 +171,7 @@ export default function CampusExamsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `exam-marks-${selectedExamForMarks.id}.csv`;
+    a.download = `exam-marks-${selectedExamId}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -173,7 +180,7 @@ export default function CampusExamsPage() {
 
   const saveMarks = useMutation({
     mutationFn: async () => {
-      if (!selectedExamForMarks?.id) throw new Error('Select an exam');
+      if (!selectedExamId) throw new Error('Select an exam');
       if (!marksEntry.classId) throw new Error('Select a class');
       if (!marksEntry.subjectId) throw new Error('Select a subject');
       const totalMarks = Number(marksEntry.totalMarks);
@@ -193,10 +200,10 @@ export default function CampusExamsPage() {
         };
       });
 
-      return api.sms.exams.saveMarks(selectedExamForMarks.id, payload);
+      return api.sms.exams.saveMarks(selectedExamId, payload);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['sms-exam-marks', selectedExamForMarks?.id] });
+      await queryClient.invalidateQueries({ queryKey: ['sms-exam-marks', selectedExamId || null] });
       toast({ title: 'Marks saved' });
     },
     onError: (e: any) => toast({ title: 'Failed to save marks', description: e?.message || 'Error', variant: 'destructive' }),
@@ -215,19 +222,22 @@ export default function CampusExamsPage() {
   const createSampleMarks = useMutation({
     mutationFn: (examId: string) => api.sms.exams.createSampleMarks(examId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sms-exam-marks', selectedExamForMarks?.id] });
+      queryClient.invalidateQueries({ queryKey: ['sms-exam-marks', selectedExamId || null] });
       toast({ title: 'Sample marks created', description: 'Sample marks have been added to this exam.' });
     },
-    onError: (e: any) => toast({ title: 'Failed to create sample marks', description: e.message, variant: 'destructive' })
+    onError: (e: any) => toast({ title: 'Failed to create sample data', description: e.message, variant: 'destructive' })
   });
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Exams</h1>
-            <p className="text-muted-foreground">Manage school examinations and marks</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Exams</h1>
+              <p className="text-muted-foreground">Manage school examinations and marks</p>
+            </div>
           </div>
           {isStaff && (
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -362,7 +372,7 @@ export default function CampusExamsPage() {
                           variant="ghost" 
                           size="sm" 
                           className="h-8 w-8 p-0"
-                          onClick={() => setSelectedExamForMarks(exam)}
+                          onClick={() => setSelectedExamId(String(exam.id))}
                         >
                           <ListChecks className="h-4 w-4" />
                         </Button>
@@ -410,258 +420,282 @@ export default function CampusExamsPage() {
           </Card>
         </div>
 
-        {selectedExamForMarks && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Marks: {selectedExamForMarks.name}</CardTitle>
-                <CardDescription>View and manage marks for this exam</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => window.print()}>
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print
-                </Button>
-                <Button variant="outline" size="sm" onClick={exportMarksCsv} disabled={(marks || []).length === 0}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
-                <Button variant="ghost" onClick={() => setSelectedExamForMarks(null)}>Close</Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-3 mb-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Overall Average</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {examSummary.overall.count > 0 ? `${examSummary.overall.averagePct.toFixed(1)}%` : '—'}
-                    </div>
-                    <div className="text-xs text-muted-foreground">{examSummary.overall.count} scored entries</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Highest / Lowest</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {examSummary.overall.count > 0
-                        ? `${examSummary.overall.maxPct.toFixed(1)}% / ${examSummary.overall.minPct.toFixed(1)}%`
-                        : '—'}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Across all recorded marks</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Subjects Graded</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{examSummary.subjects.length}</div>
-                    <div className="text-xs text-muted-foreground">With at least 1 score</div>
-                  </CardContent>
-                </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex-1">
+              <CardTitle>Marks & Analytics</CardTitle>
+              <CardDescription>Choose an exam, then view and manage marks</CardDescription>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="grid gap-1">
+                <Label className="text-xs">Exam</Label>
+                <select
+                  className="flex h-9 w-[220px] rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedExamId}
+                  onChange={(e) => {
+                    setDraftMarks({});
+                    setMarksEntry({ classId: '', sectionId: '', subjectId: '', totalMarks: '100' });
+                    setSelectedExamId(e.target.value);
+                  }}
+                >
+                  <option value="">Select exam</option>
+                  {(exams || []).map((exam: any) => (
+                    <option key={exam.id} value={exam.id}>
+                      {exam.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {examSummary.subjects.length > 0 && (
-                <Card className="mb-6">
-                  <CardHeader>
-                    <CardTitle>Subject Analytics</CardTitle>
-                    <CardDescription>Average percentage per subject</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Subject</TableHead>
-                          <TableHead className="text-right">Entries</TableHead>
-                          <TableHead className="text-right">Average</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {examSummary.subjects.map((s) => (
-                          <TableRow key={s.subjectId}>
-                            <TableCell className="font-medium">{s.subjectName}</TableCell>
-                            <TableCell className="text-right">{s.count}</TableCell>
-                            <TableCell className="text-right">{s.averagePct.toFixed(1)}%</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              )}
-
-              {isStaff && (
-                <div className="space-y-4 mb-6">
-                  <div className="grid gap-4 md:grid-cols-4">
-                    <div className="grid gap-2">
-                      <Label>Class</Label>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={marksEntry.classId}
-                        onChange={(e) => {
-                          setDraftMarks({});
-                          setMarksEntry({ ...marksEntry, classId: e.target.value, sectionId: '' });
-                        }}
-                      >
-                        <option value="">Select class</option>
-                        {(classes || []).map((c: any) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label>Subject</Label>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={marksEntry.subjectId}
-                        onChange={(e) => {
-                          setDraftMarks({});
-                          setMarksEntry({ ...marksEntry, subjectId: e.target.value });
-                        }}
-                        disabled={!marksEntry.classId}
-                      >
-                        <option value="">Select subject</option>
-                        {(subjects || []).map((s: any) => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label>Total</Label>
-                      <Input
-                        value={marksEntry.totalMarks}
-                        onChange={(e) => setMarksEntry({ ...marksEntry, totalMarks: e.target.value })}
-                        placeholder="100"
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label>&nbsp;</Label>
-                      <Button
-                        onClick={() => saveMarks.mutate()}
-                        disabled={
-                          saveMarks.isPending ||
-                          !marksEntry.classId ||
-                          !marksEntry.subjectId ||
-                          rosterStudents.length === 0 ||
-                          selectedExamForMarks?.status === 'published'
-                        }
-                      >
-                        {selectedExamForMarks?.status === 'published'
-                          ? 'Grades locked (published)'
-                          : saveMarks.isPending
-                            ? 'Saving...'
-                            : 'Save Marks'}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {!marksEntry.classId ? (
-                    <div className="text-sm text-muted-foreground">Select a class to load students.</div>
-                  ) : !marksEntry.subjectId ? (
-                    <div className="text-sm text-muted-foreground">Select a subject to start entering marks.</div>
-                  ) : isLoadingRoster ? (
-                    <div className="text-sm text-muted-foreground">Loading class roster...</div>
-                  ) : rosterStudents.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No active students found for the selected class.</div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Student</TableHead>
-                          <TableHead className="w-32">Marks</TableHead>
-                          <TableHead>Remarks</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rosterStudents.map((s: any) => {
-                          const id = String(s.id);
-                          const existing = existingMarksMap.get(id);
-                          const d = draftMarks[id];
-                          const value = d?.marksObtained ?? (existing?.marksObtained ?? '');
-                          const remarks = d?.remarks ?? (existing?.remarks ?? '');
-                          return (
-                            <TableRow key={id}>
-                              <TableCell className="font-medium">{s.name} {s.studentId ? `(${s.studentId})` : ''}</TableCell>
-                              <TableCell>
-                                <Input
-                                  value={String(value ?? '')}
-                                  onChange={(e) =>
-                                    setDraftMarks((prev) => ({
-                                      ...prev,
-                                      [id]: { marksObtained: e.target.value, remarks: prev[id]?.remarks ?? String(remarks ?? '') },
-                                    }))
-                                  }
-                                  placeholder="0"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={String(remarks ?? '')}
-                                  onChange={(e) =>
-                                    setDraftMarks((prev) => ({
-                                      ...prev,
-                                      [id]: { marksObtained: prev[id]?.marksObtained ?? String(value ?? ''), remarks: e.target.value },
-                                    }))
-                                  }
-                                  placeholder="Optional"
-                                />
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  )}
+              <Button variant="outline" size="sm" onClick={() => window.print()} disabled={!selectedExamId}>
+                <Printer className="h-4 w-4 mr-2" />
+                Print
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportMarksCsv} disabled={!selectedExamId || (marks || []).length === 0}>
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!selectedExamForMarks ? (
+              <div className="text-sm text-muted-foreground">Select an exam to view marks, analytics, and enter grades.</div>
+            ) : (
+              <>
+                <div className="grid gap-4 md:grid-cols-3 mb-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Overall Average</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {examSummary.overall.count > 0 ? `${examSummary.overall.averagePct.toFixed(1)}%` : '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{examSummary.overall.count} scored entries</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Highest / Lowest</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {examSummary.overall.count > 0
+                          ? `${examSummary.overall.maxPct.toFixed(1)}% / ${examSummary.overall.minPct.toFixed(1)}%`
+                          : '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Across all recorded marks</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Subjects Graded</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{examSummary.subjects.length}</div>
+                      <div className="text-xs text-muted-foreground">With at least 1 score</div>
+                    </CardContent>
+                  </Card>
                 </div>
-              )}
 
-              {isLoadingMarks ? (
-                <div className="text-center py-8 text-muted-foreground">Loading marks...</div>
-              ) : (marks || []).length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">No marks recorded yet. Staff can enter marks via the teacher dashboard.</div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Student</TableHead>
-                      <TableHead>Subject</TableHead>
-                      <TableHead>Score</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Grade</TableHead>
-                      <TableHead>Remarks</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(marks || []).map((m: any) => (
-                      <TableRow key={m.id}>
-                        <TableCell className="font-medium">{m.student?.name || m.studentId}</TableCell>
-                        <TableCell>{m.subject?.name || m.subjectId}</TableCell>
-                        <TableCell>{m.marksObtained}</TableCell>
-                        <TableCell>{m.totalMarks}</TableCell>
-                        <TableCell>
-                          {m.marksObtained !== null ? (
-                            <span className="font-bold">
-                              {Math.round((m.marksObtained / m.totalMarks) * 100)}%
-                            </span>
-                          ) : '—'}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{m.remarks || '—'}</TableCell>
+                {examSummary.subjects.length > 0 && (
+                  <Card className="mb-6">
+                    <CardHeader>
+                      <CardTitle>Subject Analytics</CardTitle>
+                      <CardDescription>Average percentage per subject</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Subject</TableHead>
+                            <TableHead className="text-right">Entries</TableHead>
+                            <TableHead className="text-right">Average</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {examSummary.subjects.map((s) => (
+                            <TableRow key={s.subjectId}>
+                              <TableCell className="font-medium">{s.subjectName}</TableCell>
+                              <TableCell className="text-right">{s.count}</TableCell>
+                              <TableCell className="text-right">{s.averagePct.toFixed(1)}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {isStaff && (
+                  <div className="space-y-4 mb-6">
+                    <div className="grid gap-4 md:grid-cols-4">
+                      <div className="grid gap-2">
+                        <Label>Class</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={marksEntry.classId}
+                          onChange={(e) => {
+                            setDraftMarks({});
+                            setMarksEntry({ ...marksEntry, classId: e.target.value, sectionId: '' });
+                          }}
+                        >
+                          <option value="">Select class</option>
+                          {(classes || []).map((c: any) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label>Subject</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={marksEntry.subjectId}
+                          onChange={(e) => {
+                            setDraftMarks({});
+                            setMarksEntry({ ...marksEntry, subjectId: e.target.value });
+                          }}
+                          disabled={!marksEntry.classId}
+                        >
+                          <option value="">Select subject</option>
+                          {(subjects || []).map((s: any) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label>Total</Label>
+                        <Input
+                          value={marksEntry.totalMarks}
+                          onChange={(e) => setMarksEntry({ ...marksEntry, totalMarks: e.target.value })}
+                          placeholder="100"
+                        />
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label>&nbsp;</Label>
+                        <Button
+                          onClick={() => saveMarks.mutate()}
+                          disabled={
+                            saveMarks.isPending ||
+                            !marksEntry.classId ||
+                            !marksEntry.subjectId ||
+                            rosterStudents.length === 0 ||
+                            selectedExamForMarks?.status === 'published'
+                          }
+                        >
+                          {selectedExamForMarks?.status === 'published'
+                            ? 'Grades locked (published)'
+                            : saveMarks.isPending
+                              ? 'Saving...'
+                              : 'Save Marks'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {!marksEntry.classId ? (
+                      <div className="text-sm text-muted-foreground">Select a class to load students.</div>
+                    ) : !marksEntry.subjectId ? (
+                      <div className="text-sm text-muted-foreground">Select a subject to start entering marks.</div>
+                    ) : isLoadingRoster ? (
+                      <div className="text-sm text-muted-foreground">Loading class roster...</div>
+                    ) : rosterStudents.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No active students found for the selected class.</div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Student</TableHead>
+                            <TableHead className="w-32">Marks</TableHead>
+                            <TableHead>Remarks</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rosterStudents.map((s: any) => {
+                            const id = String(s.id);
+                            const existing = existingMarksMap.get(id);
+                            const d = draftMarks[id];
+                            const value = d?.marksObtained ?? (existing?.marksObtained ?? '');
+                            const remarks = d?.remarks ?? (existing?.remarks ?? '');
+                            return (
+                              <TableRow key={id}>
+                                <TableCell className="font-medium">{s.name} {s.studentId ? `(${s.studentId})` : ''}</TableCell>
+                                <TableCell>
+                                  <Input
+                                    value={String(value ?? '')}
+                                    onChange={(e) =>
+                                      setDraftMarks((prev) => ({
+                                        ...prev,
+                                        [id]: { marksObtained: e.target.value, remarks: prev[id]?.remarks ?? String(remarks ?? '') },
+                                      }))
+                                    }
+                                    placeholder="0"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    value={String(remarks ?? '')}
+                                    onChange={(e) =>
+                                      setDraftMarks((prev) => ({
+                                        ...prev,
+                                        [id]: { marksObtained: prev[id]?.marksObtained ?? String(value ?? ''), remarks: e.target.value },
+                                      }))
+                                    }
+                                    placeholder="Optional"
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                )}
+
+                {isLoadingMarks ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading marks...</div>
+                ) : (marks || []).length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No marks recorded yet. Staff can enter marks via the teacher dashboard.</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Score</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Grade</TableHead>
+                        <TableHead>Remarks</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        )}
+                    </TableHeader>
+                    <TableBody>
+                      {(marks || []).map((m: any) => (
+                        <TableRow key={m.id}>
+                          <TableCell className="font-medium">{m.student?.name || m.studentId}</TableCell>
+                          <TableCell>{m.subject?.name || m.subjectId}</TableCell>
+                          <TableCell>{m.marksObtained}</TableCell>
+                          <TableCell>{m.totalMarks}</TableCell>
+                          <TableCell>
+                            {m.marksObtained !== null ? (
+                              <span className="font-bold">
+                                {Math.round((m.marksObtained / m.totalMarks) * 100)}%
+                              </span>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{m.remarks || '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );

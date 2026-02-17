@@ -67,6 +67,9 @@ export default function RoleSelection() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
+          <div className="flex justify-center mb-4">
+            <img src="/brand-icon.svg" alt="Campus" className="h-14 w-14" />
+          </div>
           <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
             Welcome to Campus
           </h1>

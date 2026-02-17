@@ -138,15 +138,9 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative p-4 overflow-hidden">
-      <div 
-        className="absolute inset-0 z-0" 
-        style={{
-          backgroundImage: 'url("https://images.unsplash.com/photo-1562774053-701939374585?w=1920&q=80")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center'
-        }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/90 via-purple-900/85 to-pink-900/90 backdrop-blur-sm" />
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-950 via-indigo-950 to-violet-950" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(14,165,233,0.25),transparent_55%),radial-gradient(ellipse_at_bottom,rgba(124,58,237,0.22),transparent_55%)]" />
       </div>
       
       <motion.div
@@ -155,6 +149,9 @@ export default function Login() {
         className="w-full max-w-md relative z-10"
       >
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <img src="/brand-icon.svg" alt="Campus" className="h-14 w-14 drop-shadow-xl" />
+          </div>
           <motion.h1
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}

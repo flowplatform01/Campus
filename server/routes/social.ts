@@ -7,12 +7,22 @@ import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } f
 
 const router = Router();
 
+function isSafeAssetKey(prefix: string, v: string) {
+  return typeof v === "string" && v.length > prefix.length && v.startsWith(prefix) && !v.includes("://");
+}
+
 const createPostSchema = z.object({
   content: z.string().min(1),
   category: z.string().default("discussions"),
   visibility: z.enum(["public", "school", "class"]).default("public"),
-  mediaUrl: z.string().optional(),
-  mediaThumbnail: z.string().optional(),
+  mediaUrl: z
+    .string()
+    .optional()
+    .refine((v) => !v || isSafeAssetKey("social_post_media/", v), { message: "Invalid media key" }),
+  mediaThumbnail: z
+    .string()
+    .optional()
+    .refine((v) => !v || isSafeAssetKey("social_post_media/", v), { message: "Invalid media key" }),
   tags: z.array(z.string()).default([]),
   postedAsSchool: z.boolean().optional(),
 });

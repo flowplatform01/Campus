@@ -144,16 +144,17 @@ export default function Notifications() {
     <DashboardLayout>
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
               <h1 className="text-3xl font-bold">Notifications</h1>
               {unreadCount > 0 && (
                 <Badge variant="default" className="h-6">
                   {unreadCount} new
                 </Badge>
               )}
+              <p className="text-muted-foreground">Stay updated with campus and social activities</p>
             </div>
-            <p className="text-muted-foreground">Stay updated with campus and social activities</p>
           </div>
           {unreadCount > 0 && (
             <Button variant="outline" onClick={() => markAllRead.mutate()} className="gap-2">
@@ -197,6 +198,9 @@ export default function Notifications() {
               {isLoading ? (
                 <Card className="p-12">
                   <div className="text-center">
+                    <div className="flex justify-center mb-3">
+                      <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12 opacity-80" />
+                    </div>
                     <p className="text-muted-foreground">Loading notifications...</p>
                   </div>
                 </Card>
@@ -207,6 +211,9 @@ export default function Notifications() {
               ) : (
                 <Card className="p-12">
                   <div className="text-center">
+                    <div className="flex justify-center mb-3">
+                      <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12 opacity-80" />
+                    </div>
                     <Bell className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground">No notifications yet</p>
                   </div>
@@ -224,6 +231,9 @@ export default function Notifications() {
               ) : (
                 <Card className="p-12">
                   <div className="text-center">
+                    <div className="flex justify-center mb-3">
+                      <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12 opacity-80" />
+                    </div>
                     <School className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground">No campus notifications</p>
                   </div>
@@ -241,6 +251,9 @@ export default function Notifications() {
               ) : (
                 <Card className="p-12">
                   <div className="text-center">
+                    <div className="flex justify-center mb-3">
+                      <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12 opacity-80" />
+                    </div>
                     <Users className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground">No social notifications</p>
                   </div>

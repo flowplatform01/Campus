@@ -48,6 +48,8 @@ export class MemStorage implements IStorage {
       metadata: insertUser.metadata ?? null,
       emailVerifiedAt: insertUser.emailVerifiedAt ?? null,
       onboardingCompletedAt: insertUser.onboardingCompletedAt ?? null,
+      referralCode: insertUser.referralCode ?? null,
+      deletedAt: insertUser.deletedAt ?? null,
       createdAt: now,
       updatedAt: now
     };

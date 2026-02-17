@@ -111,7 +111,7 @@ router.post("/google", async (req, res) => {
             profileCompletion: 20,
             schoolId,
             avatarUrl,
-            subRole: body.role === "employee" ? "teacher" : null,
+            subRole: null,
           })
           .returning()
       )[0];
@@ -126,6 +126,7 @@ router.post("/google", async (req, res) => {
       email: user.email,
       name: user.name,
       role: user.role,
+      subRole: user.subRole,
       profileCompletion: user.profileCompletion,
       verified: !!user.emailVerifiedAt,
       schoolLinked: !!user.schoolId,
@@ -213,13 +214,12 @@ router.post("/register", async (req, res) => {
         password: hashed,
         name: body.name,
         role: body.role,
-        verified: true,
-        emailVerifiedAt: new Date(),
+        verified: false,
         profileCompletion: 20,
         schoolId,
         studentId: body.studentId,
-        employeeId: body.employeeId,
-        subRole: body.subRole || (body.role === "employee" ? "teacher" : null),
+        employeeId: body.role === "employee" ? null : body.employeeId,
+        subRole: body.role === "employee" ? null : (body.subRole ?? null),
       })
       .returning();
     if (!user) throw new Error("Insert failed");
@@ -233,6 +233,7 @@ router.post("/register", async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        subRole: user.subRole,
         profileCompletion: user.profileCompletion,
         verified: !!user.emailVerifiedAt,
         schoolLinked: !!user.schoolId,
@@ -285,6 +286,7 @@ router.post("/login", async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        subRole: user.subRole,
         profileCompletion: user.profileCompletion,
         verified: !!user.emailVerifiedAt,
         schoolLinked: !!user.schoolId,
@@ -363,7 +365,12 @@ router.post("/forgot-password", async (req, res) => {
     const { email } = forgotPasswordSchema.parse(req.body);
     const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
     if (user) {
-      const token = nanoid(32);
+      // Hybrid reset: the token also serves as a manual reset code.
+      // Keep it user-friendly for typing while still unguessable.
+      const token = nanoid(10);
+
+      // Invalidate previous tokens for this user to reduce confusion and attack surface.
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
       await db.insert(passwordResetTokens).values({
         userId: user.id,
         token,
@@ -413,6 +420,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
     email: user.email,
     name: user.name,
     role: user.role,
+    subRole: user.subRole,
     profileCompletion: user.profileCompletion,
     verified: !!user.emailVerifiedAt,
     schoolLinked: !!user.schoolId,

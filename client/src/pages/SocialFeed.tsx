@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { SocialSubNav } from '@/components/SocialSubNav';
@@ -30,6 +30,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 type PostCategory = 'all' | 'news' | 'resources' | 'opportunities' | 'discussions' | 'announcements' | 'events' | 'achievements';
 
 export default function SocialFeed() {
@@ -45,6 +47,8 @@ export default function SocialFeed() {
   const [tagInput, setTagInput] = useState('');
   const [displayCount, setDisplayCount] = useState(10);
   const [postAsSchool, setPostAsSchool] = useState(false);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaUrlMap, setMediaUrlMap] = useState<Record<string, string>>({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -57,13 +61,41 @@ export default function SocialFeed() {
   const posts = data?.posts ?? [];
 
   const createPostMutation = useMutation({
-    mutationFn: (body: { content: string; category?: string; visibility?: string; tags?: string[] }) =>
-      api.posts.create({ ...body, category: body.category || postCategory, visibility: postVisibility, tags: selectedTags, postedAsSchool: postAsSchool }),
+    mutationFn: async (body: { content: string; category?: string; visibility?: string; tags?: string[] }) => {
+      let mediaUrl: string | undefined;
+      if (mediaFile) {
+        const formData = new FormData();
+        formData.append('file', mediaFile);
+        formData.append('assetType', 'social_post_media');
+
+        const res = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+          },
+          body: formData,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || 'Media upload failed');
+        if (!data?.key) throw new Error('Upload did not return a key');
+        mediaUrl = String(data.key);
+      }
+
+      return api.posts.create({
+        ...body,
+        category: body.category || postCategory,
+        visibility: postVisibility,
+        tags: selectedTags,
+        postedAsSchool: postAsSchool,
+        ...(mediaUrl ? { mediaUrl } : {}),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
       setNewPost('');
       setSelectedTags([]);
       setPostAsSchool(false);
+      setMediaFile(null);
       setIsCreateModalOpen(false);
       toast({
         title: 'Post created!',
@@ -71,6 +103,37 @@ export default function SocialFeed() {
       });
     }
   });
+
+  const resolveMediaUrl = async (key: string) => {
+    if (mediaUrlMap[key]) return mediaUrlMap[key];
+
+    const res = await fetch(`${API_BASE}/api/upload/url/${encodeURIComponent(key)}?assetType=${encodeURIComponent('social_post_media')}&storageType=backblaze`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || 'Failed to load media');
+    if (!data?.url) throw new Error('No URL returned');
+
+    const url = String(data.url);
+    setMediaUrlMap((prev) => ({ ...prev, [key]: url }));
+    return url;
+  };
+
+  useEffect(() => {
+    const keys = new Set<string>();
+    for (const p of posts || []) {
+      const k = (p as any)?.mediaUrl;
+      if (typeof k === 'string' && k) keys.add(k);
+    }
+    for (const k of Array.from(keys)) {
+      if (!mediaUrlMap[k]) {
+        resolveMediaUrl(k).catch(() => {});
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts]);
 
   const likePostMutation = useMutation({
     mutationFn: (postId: string) => api.posts.like(postId),
@@ -162,9 +225,12 @@ export default function SocialFeed() {
       <SocialSubNav />
       <div className="max-w-4xl mx-auto space-y-6 mt-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Social Feed</h1>
-            <p className="text-muted-foreground">Connect and share with the campus community</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Social Feed</h1>
+              <p className="text-muted-foreground">Connect and share with the campus community</p>
+            </div>
           </div>
         </div>
 
@@ -232,6 +298,15 @@ export default function SocialFeed() {
                   <p className="text-xs text-muted-foreground text-right">
                     {newPost.length} characters
                   </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Media (optional)</label>
+                  <Input
+                    type="file"
+                    onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -394,10 +469,10 @@ export default function SocialFeed() {
                   <CardContent className="space-y-4">
                     <p className="whitespace-pre-wrap">{post.content}</p>
                     
-                    {(post as any).media && (
+                    {(post as any).mediaUrl && mediaUrlMap[String((post as any).mediaUrl)] && (
                       <div className="rounded-lg overflow-hidden">
                         <img
-                          src={(post as any).media.url}
+                          src={mediaUrlMap[String((post as any).mediaUrl)]}
                           alt="Post media"
                           className="w-full h-auto max-h-96 object-cover"
                         />
@@ -465,6 +540,9 @@ export default function SocialFeed() {
           {filteredPosts?.length === 0 && (
             <Card className="p-12">
               <div className="text-center">
+                <div className="flex justify-center mb-3">
+                  <img src="/brand-icon.svg" alt="Campus" className="h-12 w-12 opacity-80" />
+                </div>
                 <p className="text-muted-foreground">
                   No posts found. Try adjusting your filters or search query.
                 </p>

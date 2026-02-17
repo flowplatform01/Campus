@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { api } from '@/lib/api';
@@ -34,11 +34,17 @@ function getReportConfig() {
 }
 
 export default function CampusReportsPage() {
-  useRequireAuth();
+  const { user } = useRequireAuth();
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [reportConfig, setReportConfig] = useState(getReportConfig);
   const [configOpen, setConfigOpen] = useState(false);
-  const [scope, setScope] = useState({ academicYearId: '', termId: '', classId: '', studentId: '' });
+  const [scope, setScope] = useState({ academicYearId: '', termId: '', classId: '', examId: '', studentId: '' });
+  const [publicationScopeType, setPublicationScopeType] = useState<'student' | 'class' | 'exam' | 'term' | 'academic_year'>('student');
+  const [publicationStatus, setPublicationStatus] = useState<'draft' | 'reviewed' | 'published'>('draft');
+
+  const isStaff = user?.role === 'admin' || user?.role === 'employee';
+  const isStudentOrParent = user?.role === 'student' || user?.role === 'parent';
 
   const updateConfig = (key: 'autoRemarks' | 'showRanking', value: boolean) => {
     const next = { ...reportConfig, [key]: value };
@@ -62,6 +68,16 @@ export default function CampusReportsPage() {
   });
 
   const { data: classes } = useQuery({ queryKey: ['sms-classes'], queryFn: api.sms.classes.list });
+
+  const { data: exams } = useQuery({ queryKey: ['sms-exams'], queryFn: api.sms.exams.list });
+
+  const filteredExams = useMemo(() => {
+    const yearId = effectiveYearId;
+    const termId = scope.termId;
+    return (exams || [])
+      .filter((e: any) => (!yearId ? true : String(e.academicYearId) === String(yearId)))
+      .filter((e: any) => (!termId ? true : String(e.termId) === String(termId)));
+  }, [exams, effectiveYearId, scope.termId]);
 
   const { data: roster } = useQuery({
     queryKey: ['sms-attendance-roster', effectiveYearId || null, scope.classId || null],
@@ -98,14 +114,61 @@ export default function CampusReportsPage() {
       });
   };
 
+  const { data: publications } = useQuery({
+    queryKey: ['sms-report-publications'],
+    queryFn: () => api.sms.reports.publications.list(),
+    enabled: isStaff,
+  });
+
+  const { data: myReports } = useQuery({
+    queryKey: ['sms-my-reports'],
+    queryFn: () => api.sms.reports.my.list(),
+    enabled: isStudentOrParent,
+  });
+
+  const createPublication = useMutation({
+    mutationFn: () => {
+      const academicYearId = effectiveYearId;
+      const termId = scope.termId;
+      return api.sms.reports.publications.create({
+        scopeType: publicationScopeType,
+        academicYearId,
+        termId,
+        examId: scope.examId || undefined,
+        classId: scope.classId || undefined,
+        studentId: scope.studentId || undefined,
+        status: publicationStatus,
+      });
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['sms-report-publications'] });
+      toast({ title: 'Publication created' });
+    },
+    onError: (e: any) => toast({ title: 'Failed', description: e?.message || 'Unable to create publication', variant: 'destructive' }),
+  });
+
+  const updatePublicationStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'draft' | 'reviewed' | 'published' }) =>
+      api.sms.reports.publications.update(id, { status }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['sms-report-publications'] });
+      await qc.invalidateQueries({ queryKey: ['sms-my-reports'] });
+      toast({ title: 'Publication updated' });
+    },
+    onError: (e: any) => toast({ title: 'Failed', description: e?.message || 'Unable to update publication', variant: 'destructive' }),
+  });
+
   const cards = data?.cards || {};
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Reports</h1>
-          <p className="text-muted-foreground">Analytics and summaries</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">Reports</h1>
+            <p className="text-muted-foreground">Analytics and summaries</p>
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -192,13 +255,13 @@ export default function CampusReportsPage() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-5">
               <div className="grid gap-2">
                 <Label>Academic Year</Label>
                 <select
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={scope.academicYearId}
-                  onChange={(e) => setScope({ ...scope, academicYearId: e.target.value, termId: '' })}
+                  onChange={(e) => setScope({ ...scope, academicYearId: e.target.value, termId: '', examId: '', studentId: '' })}
                 >
                   <option value="">Active year</option>
                   {(years || []).map((y: any) => (
@@ -211,7 +274,7 @@ export default function CampusReportsPage() {
                 <select
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={scope.termId}
-                  onChange={(e) => setScope({ ...scope, termId: e.target.value })}
+                  onChange={(e) => setScope({ ...scope, termId: e.target.value, examId: '', studentId: '' })}
                   disabled={!effectiveYearId}
                 >
                   <option value="">Select term</option>
@@ -230,6 +293,20 @@ export default function CampusReportsPage() {
                   <option value="">Select class</option>
                   {(classes || []).map((c: any) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Exam</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={scope.examId}
+                  onChange={(e) => setScope({ ...scope, examId: e.target.value })}
+                  disabled={!effectiveYearId || !scope.termId}
+                >
+                  <option value="">All / none</option>
+                  {filteredExams.map((ex: any) => (
+                    <option key={ex.id} value={ex.id}>{ex.name}</option>
                   ))}
                 </select>
               </div>
@@ -253,53 +330,184 @@ export default function CampusReportsPage() {
               <Button
                 variant="outline"
                 disabled={!scope.classId || !effectiveYearId || !scope.termId}
-                onClick={() => openExport(`/api/export/class/${encodeURIComponent(scope.classId)}/pdf?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
+                onClick={() => {
+                  const examPart = scope.examId ? `&examId=${encodeURIComponent(scope.examId)}` : '';
+                  openExport(`/api/export/class/${encodeURIComponent(scope.classId)}/pdf?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}${examPart}`);
+                }}
               >
                 Download Class PDF
               </Button>
               <Button
                 variant="outline"
                 disabled={!scope.classId || !effectiveYearId || !scope.termId}
-                onClick={() => openExport(`/api/export/class/${encodeURIComponent(scope.classId)}/excel?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
+                onClick={() => {
+                  const examPart = scope.examId ? `&examId=${encodeURIComponent(scope.examId)}` : '';
+                  openExport(`/api/export/class/${encodeURIComponent(scope.classId)}/excel?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}${examPart}`);
+                }}
               >
-                Download Class Excel
+                Download Class CSV
               </Button>
+            </div>
+
+            <div className="grid gap-2 md:grid-cols-2">
               <Button
-                disabled={!scope.studentId || !effectiveYearId || !scope.termId}
-                onClick={() => openExport(`/api/export/student/${encodeURIComponent(scope.studentId)}/pdf?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
+                disabled={!scope.classId || !scope.studentId || !effectiveYearId || !scope.termId}
+                onClick={() => {
+                  const examPart = scope.examId ? `&examId=${encodeURIComponent(scope.examId)}` : '';
+                  openExport(`/api/export/student/${encodeURIComponent(scope.studentId)}/pdf?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}${examPart}`);
+                }}
               >
                 Download Student PDF (Report Card)
               </Button>
               <Button
-                disabled={!scope.studentId || !effectiveYearId || !scope.termId}
-                onClick={() => openExport(`/api/export/student/${encodeURIComponent(scope.studentId)}/excel?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
+                disabled={!scope.classId || !scope.studentId || !effectiveYearId || !scope.termId}
+                onClick={() => {
+                  const examPart = scope.examId ? `&examId=${encodeURIComponent(scope.examId)}` : '';
+                  openExport(`/api/export/student/${encodeURIComponent(scope.studentId)}/excel?academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}${examPart}`);
+                }}
               >
-                Download Student Excel
+                Download Student CSV
               </Button>
             </div>
 
-            <div className="grid gap-2">
-              <Label>Attendance export (optional)</Label>
-              <div className="grid gap-2 md:grid-cols-2">
-                <Button
-                  variant="outline"
-                  disabled={!scope.classId || !effectiveYearId || !scope.termId}
-                  onClick={() => openExport(`/api/export/attendance/pdf?classId=${encodeURIComponent(scope.classId)}&academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
-                >
-                  Download Attendance PDF
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={!scope.classId || !effectiveYearId || !scope.termId}
-                  onClick={() => openExport(`/api/export/attendance/excel?classId=${encodeURIComponent(scope.classId)}&academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
-                >
-                  Download Attendance Excel
-                </Button>
-              </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Button
+                variant="outline"
+                disabled={!scope.classId || !effectiveYearId || !scope.termId}
+                onClick={() => openExport(`/api/export/attendance/pdf?classId=${encodeURIComponent(scope.classId)}&academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
+              >
+                Download Attendance PDF
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!scope.classId || !effectiveYearId || !scope.termId}
+                onClick={() => openExport(`/api/export/attendance/excel?classId=${encodeURIComponent(scope.classId)}&academicYearId=${encodeURIComponent(effectiveYearId)}&termId=${encodeURIComponent(scope.termId)}`)}
+              >
+                Download Attendance CSV
+              </Button>
             </div>
-
           </CardContent>
         </Card>
+
+        {isStaff && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Report Publishing</CardTitle>
+              <CardDescription>Create, review, publish and distribute report cards</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-5">
+                <div className="grid gap-2">
+                  <Label>Scope</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={publicationScopeType}
+                    onChange={(e) => setPublicationScopeType(e.target.value as any)}
+                  >
+                    <option value="student">Student</option>
+                    <option value="class">Class</option>
+                    <option value="exam">Exam</option>
+                    <option value="term">Term</option>
+                    <option value="academic_year">Academic Year</option>
+                  </select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Status</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={publicationStatus}
+                    onChange={(e) => setPublicationStatus(e.target.value as any)}
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="reviewed">Reviewed</option>
+                    <option value="published">Published</option>
+                  </select>
+                </div>
+                <div className="md:col-span-3 flex items-end">
+                  <Button
+                    disabled={!effectiveYearId || !scope.termId || createPublication.isPending}
+                    onClick={() => createPublication.mutate()}
+                    className="w-full"
+                  >
+                    {createPublication.isPending ? 'Creating...' : 'Create Publication'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-sm font-medium mb-2">Recent publications</div>
+                <div className="space-y-2">
+                  {(publications || []).slice(0, 20).map((p: any) => (
+                    <div key={p.id} className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">
+                          {p.scopeType} · {p.status}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {p.academicYearId || ''} {p.termId ? `· ${p.termId}` : ''} {p.classId ? `· ${p.classId}` : ''} {p.studentId ? `· ${p.studentId}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updatePublicationStatus.mutate({ id: p.id, status: 'draft' })}
+                        >
+                          Draft
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updatePublicationStatus.mutate({ id: p.id, status: 'reviewed' })}
+                        >
+                          Review
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => updatePublicationStatus.mutate({ id: p.id, status: 'published' })}
+                        >
+                          Publish
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {(!publications || publications.length === 0) && (
+                    <div className="text-sm text-muted-foreground">No publications yet.</div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isStudentOrParent && (
+          <Card>
+            <CardHeader>
+              <CardTitle>My Report Cards</CardTitle>
+              <CardDescription>Published reports available for download</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(myReports || []).map((r: any) => (
+                <div key={r.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{r.scopeType} report</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {r.publishedAt ? `Published ${new Date(r.publishedAt).toLocaleString()}` : 'Published'}
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => openExport(api.sms.reports.my.downloadPdfUrl(r.id))}
+                  >
+                    Download PDF
+                  </Button>
+                </div>
+              ))}
+              {(!myReports || myReports.length === 0) && (
+                <div className="text-sm text-muted-foreground">No published reports available yet.</div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );

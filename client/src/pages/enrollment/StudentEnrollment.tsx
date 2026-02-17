@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, School, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function StudentEnrollmentPage() {
   useRequireAuth(['student']);
   const qc = useQueryClient();
@@ -49,11 +51,45 @@ export default function StudentEnrollmentPage() {
 
   const filteredSchools = schools || [];
 
+  const {
+    data: schoolClasses,
+    isLoading: schoolClassesLoading,
+    isFetching: schoolClassesFetching,
+  } = useQuery({
+    queryKey: ['enrollment-school-classes', applicationForm.schoolId],
+    queryFn: () => api.enrollment.schools.classes(applicationForm.schoolId),
+    enabled: !!applicationForm.schoolId,
+    staleTime: 60_000,
+  });
+
   const submitApplication = useMutation({
-    mutationFn: () => api.enrollment.student.apply({
-      ...applicationForm,
-      documents: applicationForm.documents.map(doc => doc.name),
-    }),
+    mutationFn: async () => {
+      const docs = (applicationForm.documents || []).slice(0, 5);
+      const keys: string[] = [];
+
+      for (const file of docs) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('assetType', 'enrollment_document');
+
+        const res = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+          },
+          body: formData,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || 'Document upload failed');
+        if (!data?.key) throw new Error('Upload did not return a key');
+        keys.push(String(data.key));
+      }
+
+      return api.enrollment.student.apply({
+        ...applicationForm,
+        documents: keys,
+      });
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['my-applications'] });
       setApplicationForm({
@@ -99,9 +135,12 @@ export default function StudentEnrollmentPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Student Enrollment</h1>
-            <p className="text-muted-foreground">Apply to schools and track your applications</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Student Enrollment</h1>
+              <p className="text-muted-foreground">Apply to schools and track your applications</p>
+            </div>
           </div>
         </div>
 
@@ -144,40 +183,55 @@ export default function StudentEnrollmentPage() {
                         No schools found matching your search
                       </div>
                     ) : (
-                      filteredSchools.map((school: any) => (
-                        <div
-                          key={school.id}
-                          className={`p-4 border rounded-lg transition-colors ${school.enrollmentOpen ? 'hover:bg-accent cursor-pointer' : 'opacity-75 cursor-not-allowed'}`}
-                          onClick={() => {
-                            if (!school.enrollmentOpen) return;
-                            setApplicationForm({ ...applicationForm, schoolId: school.id });
-                          }}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h3 className="font-semibold">{school.name}</h3>
-                              <p className="text-sm text-muted-foreground">{school.address}</p>
-                              <p className="text-sm">{school.description}</p>
-                              <div className="flex items-center gap-2 mt-2">
-                                <Badge variant={school.enrollmentOpen ? 'default' : 'secondary'}>
-                                  {school.enrollmentOpen ? 'Accepting Applications' : 'Closed'}
-                                </Badge>
-                                {school.type && (
-                                  <Badge variant="outline">{school.type}</Badge>
-                                )}
+                      filteredSchools.map((school: any) => {
+                        const selected = applicationForm.schoolId === school.id;
+                        return (
+                          <div
+                            key={school.id}
+                            className={`p-4 border rounded-lg transition-colors ${
+                              selected
+                                ? 'border-primary bg-accent/50 ring-1 ring-primary'
+                                : school.enrollmentOpen
+                                  ? 'hover:bg-accent cursor-pointer'
+                                  : 'opacity-75 cursor-not-allowed'
+                            }`}
+                            onMouseEnter={() => {
+                              if (!school?.id) return;
+                              qc.prefetchQuery({
+                                queryKey: ['enrollment-school-classes', school.id],
+                                queryFn: () => api.enrollment.schools.classes(school.id),
+                                staleTime: 60_000,
+                              });
+                            }}
+                            onClick={() => {
+                              if (!school.enrollmentOpen) return;
+                              setApplicationForm({ ...applicationForm, schoolId: school.id, classId: '' });
+                            }}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <h3 className="font-semibold">{school.name}</h3>
+                                <p className="text-sm text-muted-foreground">{school.address}</p>
+                                <p className="text-sm">{school.description}</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <Badge variant={school.enrollmentOpen ? 'default' : 'secondary'}>
+                                    {school.enrollmentOpen ? 'Accepting Applications' : 'Closed'}
+                                  </Badge>
+                                  {school.type && <Badge variant="outline">{school.type}</Badge>}
+                                </div>
                               </div>
+                              <Button
+                                onClick={() => setApplicationForm({ ...applicationForm, schoolId: school.id, classId: '' })}
+                                disabled={!school.enrollmentOpen}
+                                variant={selected ? 'default' : 'outline'}
+                                size="sm"
+                              >
+                                {selected ? 'Selected' : 'Select'}
+                              </Button>
                             </div>
-                            <Button
-                              onClick={() => setApplicationForm({ ...applicationForm, schoolId: school.id })}
-                              disabled={!school.enrollmentOpen}
-                              variant="outline"
-                              size="sm"
-                            >
-                              Select
-                            </Button>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </CardContent>
@@ -205,22 +259,31 @@ export default function StudentEnrollmentPage() {
                           value={applicationForm.classId}
                           onChange={(e) => setApplicationForm({ ...applicationForm, classId: e.target.value })}
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          disabled={schoolClassesLoading || schoolClassesFetching || !(schoolClasses || []).length}
                           required
                         >
-                          <option value="">Select class</option>
-                          <option value="grade1">Grade 1</option>
-                          <option value="grade2">Grade 2</option>
-                          <option value="grade3">Grade 3</option>
-                          <option value="grade4">Grade 4</option>
-                          <option value="grade5">Grade 5</option>
-                          <option value="grade6">Grade 6</option>
-                          <option value="grade7">Grade 7</option>
-                          <option value="grade8">Grade 8</option>
-                          <option value="grade9">Grade 9</option>
-                          <option value="grade10">Grade 10</option>
-                          <option value="grade11">Grade 11</option>
-                          <option value="grade12">Grade 12</option>
+                          {schoolClassesLoading || schoolClassesFetching ? (
+                            <option value="" disabled>
+                              Loading classes...
+                            </option>
+                          ) : (schoolClasses || []).length === 0 ? (
+                            <option value="" disabled>
+                              No classes available for this school
+                            </option>
+                          ) : (
+                            <>
+                              <option value="">Select class</option>
+                              {(schoolClasses || []).map((c: any) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </>
+                          )}
                         </select>
+                        {!schoolClassesLoading && !schoolClassesFetching && applicationForm.schoolId && (schoolClasses || []).length === 0 && (
+                          <p className="text-xs text-muted-foreground">Ask the school admin to create classes before applying.</p>
+                        )}
                       </div>
 
                       <div className="grid gap-2">
@@ -318,7 +381,7 @@ export default function StudentEnrollmentPage() {
                           id="documents"
                           type="file"
                           multiple
-                          onChange={(e) => setApplicationForm({ ...applicationForm, documents: Array.from(e.target.files || []) })}
+                          onChange={(e) => setApplicationForm({ ...applicationForm, documents: Array.from(e.target.files || []).slice(0, 5) })}
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         />
                       </div>

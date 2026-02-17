@@ -32,9 +32,12 @@ export default function CampusCertificatesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6 print:hidden">
-        <div>
-          <h1 className="text-3xl font-bold">Certificates & ID Cards</h1>
-          <p className="text-muted-foreground">Generate and print student documents</p>
+        <div className="flex items-center gap-3">
+          <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">Certificates & ID Cards</h1>
+            <p className="text-muted-foreground">Generate and print student documents</p>
+          </div>
         </div>
 
         <div className="grid gap-6 md:grid-cols-4">

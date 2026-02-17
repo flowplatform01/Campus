@@ -6,7 +6,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ModeProvider } from "@/contexts/ModeContext";
-import { useEffect } from "react";
+import { SplashScreen, useSplashScreen, PageLoader } from "@/components/ui/splash-screen";
+import { useEffect, useState } from "react";
 import NotFound from "@/pages/not-found";
 import RoleSelection from "@/pages/RoleSelection";
 import Login from "@/pages/Login";
@@ -234,17 +235,33 @@ function Router() {
 }
 
 function App() {
+  const { isVisible, message, show, hide, setMessage } = useSplashScreen();
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+  useEffect(() => {
+    // Hide splash screen after initial load
+    const timer = setTimeout(() => {
+      setIsInitialLoad(false);
+      hide();
+    }, 2000); // 2 seconds initial splash
+
+    return () => clearTimeout(timer);
+  }, [hide]);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ModeProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </ModeProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <>
+      <SplashScreen show={isInitialLoad || isVisible} message={message} />
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ModeProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </ModeProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </>
   );
 }
 

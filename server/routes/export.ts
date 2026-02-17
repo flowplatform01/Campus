@@ -66,8 +66,8 @@ router.get("/student/:studentId/excel", requireAuth, requireTenantAccess, async 
       schoolId,
       meta: { type: "student_excel", academicYearId, termId },
     });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="student-report-${studentId}.xlsx"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="student-report-${studentId}.csv"`);
     res.send(excelBuffer);
   } catch (error) {
     console.error('Error generating student Excel report:', error);
@@ -122,8 +122,8 @@ router.get("/class/:classId/excel", requireAuth, requireTenantAccess, async (req
     const reportData = await generateClassReport(schoolId, classId, academicYearId, termId);
     const excelBuffer = await generateExcelReport(reportData.students, 'class_performance');
     
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="class-report-${classId}.xlsx"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="class-report-${classId}.csv"`);
     res.send(excelBuffer);
   } catch (error) {
     console.error('Error generating class Excel report:', error);
@@ -169,8 +169,8 @@ router.get("/attendance/excel", requireAuth, requireTenantAccess, async (req: Au
     const reportData = await generateAttendanceReport(schoolId, classId, academicYearId, termId);
     const excelBuffer = await generateExcelReport(reportData.records, 'attendance');
     
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="attendance-report.xlsx"');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="attendance-report.csv"');
     res.send(excelBuffer);
   } catch (error) {
     console.error('Error generating attendance Excel report:', error);

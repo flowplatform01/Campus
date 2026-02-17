@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, Users, FileText, Plus, CheckCircle, Clock, AlertCircle, Baby } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function ParentEnrollmentPage() {
   useRequireAuth(['parent']);
   const qc = useQueryClient();
@@ -59,10 +61,33 @@ export default function ParentEnrollmentPage() {
   ) || [];
 
   const registerChild = useMutation({
-    mutationFn: () => api.enrollment.parent.registerChild({
-      ...childForm,
-      documents: childForm.documents.map(doc => doc.name),
-    }),
+    mutationFn: async () => {
+      const docs = (childForm.documents || []).slice(0, 5);
+      const keys: string[] = [];
+
+      for (const file of docs) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('assetType', 'enrollment_document');
+
+        const res = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+          },
+          body: formData,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || 'Document upload failed');
+        if (!data?.key) throw new Error('Upload did not return a key');
+        keys.push(String(data.key));
+      }
+
+      return api.enrollment.parent.registerChild({
+        ...childForm,
+        documents: keys,
+      });
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['my-children'] });
       setChildForm({
@@ -81,10 +106,33 @@ export default function ParentEnrollmentPage() {
   });
 
   const submitApplication = useMutation({
-    mutationFn: () => api.enrollment.parent.applyForChild({
-      ...applicationForm,
-      documents: applicationForm.documents.map(doc => doc.name),
-    }),
+    mutationFn: async () => {
+      const docs = (applicationForm.documents || []).slice(0, 5);
+      const keys: string[] = [];
+
+      for (const file of docs) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('assetType', 'enrollment_document');
+
+        const res = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('campus_access_token')}`,
+          },
+          body: formData,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || 'Document upload failed');
+        if (!data?.key) throw new Error('Upload did not return a key');
+        keys.push(String(data.key));
+      }
+
+      return api.enrollment.parent.applyForChild({
+        ...applicationForm,
+        documents: keys,
+      });
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['parent-applications'] });
       setApplicationForm({
@@ -123,9 +171,12 @@ export default function ParentEnrollmentPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Parent Enrollment</h1>
-            <p className="text-muted-foreground">Register children and apply for school admission</p>
+          <div className="flex items-center gap-3">
+            <img src="/brand-icon.svg" alt="Campus" className="h-10 w-10" />
+            <div>
+              <h1 className="text-3xl font-bold">Parent Enrollment</h1>
+              <p className="text-muted-foreground">Register children and apply for school admission</p>
+            </div>
           </div>
         </div>
 
@@ -208,7 +259,7 @@ export default function ParentEnrollmentPage() {
                       id="documents"
                       type="file"
                       multiple
-                      onChange={(e) => setChildForm({ ...childForm, documents: Array.from(e.target.files || []) })}
+                      onChange={(e) => setChildForm({ ...childForm, documents: Array.from(e.target.files || []).slice(0, 5) })}
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
@@ -346,7 +397,7 @@ export default function ParentEnrollmentPage() {
                           id="documents"
                           type="file"
                           multiple
-                          onChange={(e) => setApplicationForm({ ...applicationForm, documents: Array.from(e.target.files || []) })}
+                          onChange={(e) => setApplicationForm({ ...applicationForm, documents: Array.from(e.target.files || []).slice(0, 5) })}
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         />
                       </div>
