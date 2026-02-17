@@ -8,6 +8,7 @@ import {
   generatePDFReport, 
   generateExcelReport 
 } from "../services/export-service.js";
+import { logAudit } from "../services/audit-service.js";
 
 const router = Router();
 
@@ -26,7 +27,14 @@ router.get("/student/:studentId/pdf", requireAuth, requireTenantAccess, async (r
 
     const reportData = await generateStudentReport(schoolId, studentId, academicYearId, termId);
     const pdfBuffer = await generatePDFReport(reportData, 'student');
-    
+    await logAudit({
+      action: "report_export",
+      entityType: "report",
+      entityId: studentId,
+      actorId: req.user!.id,
+      schoolId,
+      meta: { type: "student_pdf", academicYearId, termId },
+    });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="student-report-${studentId}.pdf"`);
     res.send(pdfBuffer);
@@ -50,7 +58,14 @@ router.get("/student/:studentId/excel", requireAuth, requireTenantAccess, async 
 
     const reportData = await generateStudentReport(schoolId, studentId, academicYearId, termId);
     const excelBuffer = await generateExcelReport([reportData], 'student');
-    
+    await logAudit({
+      action: "report_export",
+      entityType: "report",
+      entityId: studentId,
+      actorId: req.user!.id,
+      schoolId,
+      meta: { type: "student_excel", academicYearId, termId },
+    });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="student-report-${studentId}.xlsx"`);
     res.send(excelBuffer);
@@ -75,7 +90,14 @@ router.get("/class/:classId/pdf", requireAuth, requireTenantAccess, async (req: 
 
     const reportData = await generateClassReport(schoolId, classId, academicYearId, termId);
     const pdfBuffer = await generatePDFReport(reportData, 'class');
-    
+    await logAudit({
+      action: "report_export",
+      entityType: "report",
+      entityId: classId,
+      actorId: req.user!.id,
+      schoolId,
+      meta: { type: "class_pdf", academicYearId, termId },
+    });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="class-report-${classId}.pdf"`);
     res.send(pdfBuffer);

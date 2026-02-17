@@ -50,8 +50,39 @@ export const users = pgTable("users", {
   badges: jsonb("badges").$type<string[]>().default([]),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
+  referralCode: varchar("referral_code", { length: 32 }),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const accountDeletionRequests = pgTable("account_deletion_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id),
+  action: varchar("action", { length: 50 }).notNull(),
+  entityType: varchar("entity_type", { length: 50 }).notNull(),
+  entityId: varchar("entity_id", { length: 200 }),
+  actorId: varchar("actor_id").references(() => users.id).notNull(),
+  meta: jsonb("meta").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const referralVisits = pgTable("referral_visits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  referralCode: varchar("referral_code", { length: 32 }).notNull(),
+  referrerUserId: varchar("referrer_user_id").references(() => users.id),
+  visitorSessionId: varchar("visitor_session_id", { length: 64 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const emailVerificationTokens = pgTable("email_verification_tokens", {

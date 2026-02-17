@@ -126,6 +126,14 @@ export async function generateStudentReport(schoolId: string, studentId: string,
       )
       .orderBy(desc(smsAttendanceSessions.date));
 
+    const avgScore = assignments.filter(a => a.submission?.score !== null).length > 0
+      ? assignments.filter(a => a.submission?.score !== null).reduce((sum, a) => sum + (a.submission?.score || 0), 0) /
+        assignments.filter(a => a.submission?.score !== null).length
+      : 0;
+    const presentDays = attendance.filter(a => a.entry.status === 'present').length;
+    const attendanceRate = attendance.length > 0 ? (presentDays / attendance.length * 100) : 0;
+    const remark = generateAutoRemark(avgScore, attendanceRate);
+
     return {
       student,
       enrollment,
@@ -134,14 +142,11 @@ export async function generateStudentReport(schoolId: string, studentId: string,
       summary: {
         totalAssignments: assignments.length,
         submittedAssignments: assignments.filter(a => a.submission).length,
-        averageScore: assignments
-          .filter(a => a.submission?.score !== null)
-          .reduce((sum, a) => sum + (a.submission?.score || 0), 0) / 
-          assignments.filter(a => a.submission?.score !== null).length || 1,
+        averageScore: avgScore.toFixed(1),
         totalAttendanceDays: attendance.length,
-        presentDays: attendance.filter(a => a.entry.status === 'present').length,
-        attendanceRate: attendance.length > 0 ? 
-          (attendance.filter(a => a.entry.status === 'present').length / attendance.length * 100).toFixed(1) : '0'
+        presentDays,
+        attendanceRate: attendanceRate.toFixed(1),
+        remark
       }
     };
   } catch (error) {
@@ -303,6 +308,21 @@ export async function generateAttendanceReport(schoolId: string, classId?: strin
   }
 }
 
+/** Rule-based remark engine: generates remarks from average score and attendance rate */
+export function generateAutoRemark(avgScore: number, attendanceRate: number): string {
+  const score = Number(avgScore) || 0;
+  const att = Number(attendanceRate) || 0;
+  if (score >= 90 && att >= 90) return "Excellent performance with outstanding attendance.";
+  if (score >= 90) return "Excellent academic performance. Encourage consistent attendance.";
+  if (score >= 80 && att >= 85) return "Very good performance. Keep up the great work.";
+  if (score >= 80) return "Good performance. Focus on improving attendance.";
+  if (score >= 70 && att >= 80) return "Satisfactory progress. Room for improvement.";
+  if (score >= 70) return "Satisfactory work. Please improve attendance and study habits.";
+  if (score >= 60) return "Needs improvement. Consider extra support and better attendance.";
+  if (score >= 50) return "Below expectations. Recommend remedial support and parent meeting.";
+  return "Critical improvement needed. Urgent intervention recommended.";
+}
+
 // Helper functions
 function generateHTMLReport(data: any, type: string): string {
   const title = type === 'student' ? 'Student Academic Report' : 'Class Performance Report';
@@ -350,6 +370,7 @@ function generateReportContent(data: any, type: string): string {
           <p><strong>Submitted:</strong> ${data.summary.submittedAssignments}</p>
           <p><strong>Average Score:</strong> ${data.summary.averageScore}%</p>
           <p><strong>Attendance Rate:</strong> ${data.summary.attendanceRate}%</p>
+          ${data.summary.remark ? `<p><strong>Remarks:</strong> ${data.summary.remark}</p>` : ''}
         </div>
       </div>
       
@@ -406,6 +427,7 @@ Total Assignments: ${data.summary.totalAssignments}
 Submitted: ${data.summary.submittedAssignments}
 Average Score: ${data.summary.averageScore}%
 Attendance Rate: ${data.summary.attendanceRate}%
+${data.summary.remark ? `Remarks: ${data.summary.remark}` : ''}
 
 ASSIGNMENT DETAILS
 ------------------

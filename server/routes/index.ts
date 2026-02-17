@@ -18,6 +18,7 @@ import enrollmentRoutes from "./enrollment.js";
 import parentStudentLinkingRoutes from "./parent-student-linking.js";
 import teacherClassLinkingRoutes from "./teacher-class-linking.js";
 import logicHardeningRoutes from "./logic-hardening.js";
+import referralRoutes from "./referrals.js";
 import { config } from "../config.js";
 import { setupSocket } from "../socket.js";
 
@@ -41,6 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/relationships/parent-student", parentStudentLinkingRoutes);
   app.use("/api/relationships/teacher-class", teacherClassLinkingRoutes);
   app.use("/api/hardening", logicHardeningRoutes);
+  app.use("/api/referrals", referralRoutes);
 
   const httpServer = createServer(app);
   setupSocket(httpServer);

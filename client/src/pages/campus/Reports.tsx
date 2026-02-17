@@ -5,15 +5,46 @@ import { api } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { useMemo, useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { ChevronDown, Settings2 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
+const REPORT_CONFIG_KEY = 'campus_report_config';
+
+function getReportConfig() {
+  try {
+    const raw = localStorage.getItem(REPORT_CONFIG_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        autoRemarks: p.autoRemarks !== false,
+        showRanking: p.showRanking !== false,
+      };
+    }
+  } catch { /* ignore */ }
+  return { autoRemarks: true, showRanking: true };
+}
+
 export default function CampusReportsPage() {
   useRequireAuth();
-
+  const { toast } = useToast();
+  const [reportConfig, setReportConfig] = useState(getReportConfig);
+  const [configOpen, setConfigOpen] = useState(false);
   const [scope, setScope] = useState({ academicYearId: '', termId: '', classId: '', studentId: '' });
+
+  const updateConfig = (key: 'autoRemarks' | 'showRanking', value: boolean) => {
+    const next = { ...reportConfig, [key]: value };
+    setReportConfig(next);
+    localStorage.setItem(REPORT_CONFIG_KEY, JSON.stringify(next));
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['sms-reports-summary'],
@@ -48,21 +79,22 @@ export default function CampusReportsPage() {
 
   const openExport = (path: string) => {
     const token = localStorage.getItem('campus_access_token');
-    const url = `${API_BASE}${path}`;
-    // Use fetch to include Authorization then open blob
+    const sep = path.includes('?') ? '&' : '?';
+    const opts = `${sep}autoRemarks=${reportConfig.autoRemarks}&showRanking=${reportConfig.showRanking}`;
+    const url = `${API_BASE}${path}${opts}`;
     fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(async (res) => {
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data?.message || 'Export failed');
+          throw new Error((data as any)?.message || 'Export failed');
         }
         const blob = await res.blob();
         const objectUrl = URL.createObjectURL(blob);
         window.open(objectUrl, '_blank');
+        toast({ title: 'Export started', description: 'Your report is downloading.' });
       })
-      .catch(() => {
-        // no toast here to avoid extra deps in this file
-        alert('Failed to export report');
+      .catch((e) => {
+        toast({ title: 'Export failed', description: e instanceof Error ? e.message : 'Unable to export', variant: 'destructive' });
       });
   };
 
@@ -130,6 +162,36 @@ export default function CampusReportsPage() {
             <CardDescription>Generate student/class PDFs and spreadsheets</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
+            <Collapsible open={configOpen} onOpenChange={setConfigOpen}>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" className="w-full justify-between">
+                  <span className="flex items-center gap-2">
+                    <Settings2 className="w-4 h-4" />
+                    Report Configuration
+                  </span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${configOpen ? 'rotate-180' : ''}`} />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="rounded-lg border p-4 mt-2 space-y-4 bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Auto-generated remarks</Label>
+                      <p className="text-xs text-muted-foreground">Add rule-based remarks to report cards based on performance and attendance</p>
+                    </div>
+                    <Switch checked={reportConfig.autoRemarks} onCheckedChange={(v) => updateConfig('autoRemarks', v)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Show ranking</Label>
+                      <p className="text-xs text-muted-foreground">Include class rank in reports (when applicable)</p>
+                    </div>
+                    <Switch checked={reportConfig.showRanking} onCheckedChange={(v) => updateConfig('showRanking', v)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Default grading: A (90-100), B (80-89), C (70-79), D (60-69), F (&lt;60)</p>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
             <div className="grid gap-4 md:grid-cols-4">
               <div className="grid gap-2">
                 <Label>Academic Year</Label>
@@ -236,9 +298,6 @@ export default function CampusReportsPage() {
               </div>
             </div>
 
-            <div className="hidden">
-              <Input />
-            </div>
           </CardContent>
         </Card>
       </div>

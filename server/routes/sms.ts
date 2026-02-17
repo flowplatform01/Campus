@@ -42,6 +42,7 @@ import {
   users,
 } from "@shared/schema";
 import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } from "../middleware/auth.js";
+import { logAudit } from "../services/audit-service.js";
 
 const router = Router();
 
@@ -926,7 +927,7 @@ router.get("/payments/invoices", requireAuth, requireTenantAccess, async (req: A
         (select fh.name from sms_invoice_lines l left join sms_fee_heads fh on fh.id = l.fee_head_id where l.invoice_id = ${smsInvoices.id} limit 1),
         (select l.description from sms_invoice_lines l where l.invoice_id = ${smsInvoices.id} limit 1),
         ${smsInvoices.id}
-      )`,
+      )`.as('displayName'),
     })
     .from(smsInvoices)
     .where(and(...whereParts))
@@ -1160,6 +1161,14 @@ router.post("/payments/payments", requireAuth, requireTenantAccess, async (req: 
       .returning();
 
     const updatedInvoice = await recomputeInvoiceTotals(schoolId, invoice.id);
+    await logAudit({
+      action: "payment_record",
+      entityType: "payment",
+      entityId: row.id,
+      actorId: user.id,
+      schoolId,
+      meta: { invoiceId: invoice.id, studentId: invoice.studentId, amount: body.amount, method: body.method },
+    });
     return res.status(201).json({ payment: row, invoice: updatedInvoice });
   } catch (e) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input", errors: e.errors });
@@ -2035,18 +2044,44 @@ router.get("/dashboard", requireAuth, requireTenantAccess, async (req: AuthReque
     .orderBy(desc(smsAttendanceAuditLog.at))
     .limit(5);
 
+  const totalExpensesRow = (
+    await db.select({ sum: sql<number>`coalesce(sum(amount), 0)` }).from(smsExpenses).where(eq(smsExpenses.schoolId, schoolId))
+  )[0];
+  const totalExpenses = totalExpensesRow?.sum ?? 0;
+  const examsCountRow = hasActiveYear
+    ? (await db.select({ count: sql<number>`count(*)` }).from(smsExams).where(and(eq(smsExams.schoolId, schoolId), eq(smsExams.academicYearId, activeYear.id))))[0]
+    : { count: 0 };
+  const examsCount = examsCountRow?.count ?? 0;
+
+  const openInvoicesCount = (
+    await db.select({ count: sql<number>`count(*)` }).from(smsInvoices).where(and(eq(smsInvoices.schoolId, schoolId), eq(smsInvoices.status, "open")))
+  )[0]?.count ?? 0;
+
+  const draftAttendanceCount = hasActiveYear && activeYear
+    ? (await db.select({ count: sql<number>`count(*)` }).from(smsAttendanceSessions).where(and(eq(smsAttendanceSessions.schoolId, schoolId), eq(smsAttendanceSessions.academicYearId, activeYear.id), eq(smsAttendanceSessions.status, "draft"))))[0]?.count ?? 0
+    : 0;
+
+  const alerts: Array<{ type: string; message: string; count?: number; actionUrl?: string }> = [];
+  if (pendingAdmissions > 0) alerts.push({ type: "pending_approvals", message: `${pendingAdmissions} admission(s) awaiting approval`, count: pendingAdmissions, actionUrl: "/enrollment/admin" });
+  if (openInvoicesCount > 0) alerts.push({ type: "unpaid_fees", message: `${openInvoicesCount} unpaid invoice(s)`, count: openInvoicesCount, actionUrl: "/campus/payments" });
+  if (draftAttendanceCount > 0) alerts.push({ type: "draft_attendance", message: `${draftAttendanceCount} attendance session(s) need locking`, count: draftAttendanceCount, actionUrl: "/campus/attendance" });
+  if (!hasActiveYear) alerts.push({ type: "setup", message: "Set an active academic year in School Setup", actionUrl: "/campus/admin" });
+
   if (user.role === "admin") {
     return res.json({
       role: "admin",
-      setup: {
-        hasActiveAcademicYear: hasActiveYear,
-      },
+      setup: { hasActiveAcademicYear: hasActiveYear },
       cards: {
         students: studentsCount,
         employees: employeesCount,
         pendingAdmissions,
         feeCollection: totalCollected || 0,
+        totalExpenses,
+        examsCount,
+        openInvoices: openInvoicesCount,
+        draftAttendance: draftAttendanceCount,
       },
+      alerts,
       recentAnnouncements,
       recentAudit,
     });
@@ -2816,19 +2851,32 @@ router.post("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: Au
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
 
   const [exam] = await db
-    .select({ id: smsExams.id, schoolId: smsExams.schoolId })
+    .select({ id: smsExams.id, schoolId: smsExams.schoolId, status: smsExams.status })
     .from(smsExams)
     .where(and(eq(smsExams.id, examId), eq(smsExams.schoolId, schoolId)))
     .limit(1);
   if (!exam) return res.status(404).json({ message: "Exam not found" });
+  if (exam.status === "published") {
+    return res.status(403).json({ message: "Grades are locked. This exam has been published and cannot be edited." });
+  }
 
   const body = z.array(z.object({
     studentId: z.string().min(1),
     subjectId: z.string().min(1),
-    marksObtained: z.number().optional(),
-    totalMarks: z.number().min(1),
-    remarks: z.string().optional(),
+    marksObtained: z.number().min(0).max(10000).optional(),
+    totalMarks: z.number().min(1).max(10000),
+    remarks: z.string().max(500).optional(),
   })).parse(req.body);
+
+  for (const m of body) {
+    const obtained = m.marksObtained ?? 0;
+    if (obtained > m.totalMarks) {
+      return res.status(400).json({ message: `Marks obtained (${obtained}) cannot exceed total marks (${m.totalMarks})` });
+    }
+    if (obtained < 0) {
+      return res.status(400).json({ message: "Marks obtained cannot be negative" });
+    }
+  }
 
   const results = await Promise.all(body.map(async (mark) => {
     // Prevent cross-tenant subject usage
@@ -2884,6 +2932,15 @@ router.post("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: Au
 
     return saved[0];
   }));
+
+  await logAudit({
+    action: "grade_save",
+    entityType: "exam_marks",
+    entityId: examId,
+    actorId: user.id,
+    schoolId,
+    meta: { examId, count: body.length },
+  });
 
   return res.json(results);
 });
@@ -3379,7 +3436,15 @@ router.post("/students/promote", requireAuth, requireTenantAccess, async (req: A
     
     results.push(newEnrollment);
   }
-  
+
+  await logAudit({
+    action: "promotion_decision",
+    entityType: "enrollment",
+    actorId: req.user!.id,
+    schoolId,
+    meta: { studentCount: results.length, currentYear: body.currentAcademicYearId, nextYear: body.nextAcademicYearId },
+  });
+
   return res.json({ message: `Successfully promoted ${results.length} students`, enrollments: results });
 });
 

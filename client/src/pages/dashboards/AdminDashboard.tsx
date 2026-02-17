@@ -1,19 +1,24 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
-import { Users, GraduationCap, DollarSign, TrendingUp, Wallet, ClipboardCheck } from 'lucide-react';
+import { Users, GraduationCap, DollarSign, TrendingUp, Wallet, ClipboardCheck, AlertTriangle, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 import { api } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 
 export default function AdminDashboard() {
   useRequireAuth(['admin']);
+  const [, setLocation] = useLocation();
 
   const { data } = useQuery({
     queryKey: ['sms-dashboard'],
     queryFn: api.sms.dashboard.get,
   });
+
+  const alerts = (data?.alerts || []) as Array<{ type: string; message: string; count?: number; actionUrl?: string }>;
 
   const stats = [
     {
@@ -39,14 +44,14 @@ export default function AdminDashboard() {
     },
     {
       title: 'Fee Collection',
-      value: data?.cards?.feeCollection !== undefined ? `$${data.cards.feeCollection}` : '—',
+      value: data?.cards?.feeCollection !== undefined ? `$${Number(data.cards.feeCollection).toLocaleString()}` : '—',
       icon: DollarSign,
       change: '',
       color: 'from-purple-500 to-pink-500'
     },
     {
       title: 'Total Expenses',
-      value: data?.cards?.totalExpenses !== undefined ? `$${data.cards.totalExpenses}` : '—',
+      value: data?.cards?.totalExpenses !== undefined ? `$${Number(data.cards.totalExpenses).toLocaleString()}` : '—',
       icon: Wallet,
       change: '',
       color: 'from-red-500 to-rose-500'
@@ -74,6 +79,27 @@ export default function AdminDashboard() {
               Setup incomplete: set exactly one active academic year in School Setup.
             </AlertDescription>
           </Alert>
+        )}
+
+        {alerts.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              Smart Alerts
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {alerts.map((a) => (
+                <Alert key={a.type} className="flex items-center justify-between py-2">
+                  <AlertDescription>{a.message}</AlertDescription>
+                  {a.actionUrl && (
+                    <Button variant="ghost" size="sm" onClick={() => setLocation(a.actionUrl!)}>
+                      View <ArrowRight className="w-3 h-3 ml-1" />
+                    </Button>
+                  )}
+                </Alert>
+              ))}
+            </div>
+          </div>
         )}
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

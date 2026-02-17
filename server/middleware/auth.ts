@@ -36,6 +36,9 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     if (!user) {
       return res.status(401).json({ message: "User not found" });
     }
+    if (user.deletedAt) {
+      return res.status(401).json({ message: "Account has been deleted" });
+    }
     req.user = {
       id: user.id,
       email: user.email,
@@ -60,7 +63,7 @@ export function optionalAuth(req: AuthRequest, res: Response, next: NextFunction
     const payload = decoded as JwtPayload;
     try {
       const [user] = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
-      if (user) {
+      if (user && !user.deletedAt) {
         req.user = {
           id: user.id,
           email: user.email,

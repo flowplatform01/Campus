@@ -18,6 +18,12 @@ import {
   sendVerificationEmail,
   sendPasswordResetEmail,
 } from "../services/email.js";
+import {
+  requestAccountDeletion,
+  cancelAccountDeletion,
+  getDeletionStatus,
+  executeDueDeletions,
+} from "../services/account-deletion-service.js";
 
 const router = Router();
 
@@ -63,9 +69,14 @@ router.post("/google", async (req, res) => {
     const name = String(tokenInfo.name || tokenInfo.given_name || email.split("@")[0] || "User");
     const avatarUrl = tokenInfo.picture ? String(tokenInfo.picture) : null;
 
-    const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const [existing] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    const existingActive = existing && !existing.deletedAt ? existing : null;
 
-    if (!existing && !body.role) {
+    if (!existingActive && !body.role) {
       return res.json({
         needsRoleSelection: true,
         profile: {
@@ -77,7 +88,7 @@ router.post("/google", async (req, res) => {
     }
 
     let schoolId: string | null = null;
-    if (!existing && body.role === "admin") {
+    if (!existingActive && body.role === "admin") {
       const [school] = await db
         .insert(schools)
         .values({ name: `${name}'s School` })
@@ -86,7 +97,7 @@ router.post("/google", async (req, res) => {
     }
 
     const user =
-      existing ??
+      existingActive ??
       (
         await db
           .insert(users)
@@ -183,7 +194,7 @@ router.post("/register", async (req, res) => {
   try {
     const body = registerSchema.parse(req.body);
     const [existing] = await db.select().from(users).where(eq(users.email, body.email)).limit(1);
-    if (existing) {
+    if (existing && !existing.deletedAt) {
       return res.status(400).json({ message: "Email already registered" });
     }
     const hashed = await bcrypt.hash(body.password, 10);
@@ -252,10 +263,11 @@ router.post("/login", async (req, res) => {
     const body = loginSchema.parse(req.body);
     console.log(`[Auth] Parsed body:`, { email: body.email, hasPassword: !!body.password });
     
+    await executeDueDeletions();
     const [user] = await db.select().from(users).where(eq(users.email, body.email)).limit(1);
     console.log(`[Auth] User found:`, !!user, user ? { id: user.id, email: user.email, hasPassword: !!user.password } : null);
     
-    if (!user) {
+    if (!user || user.deletedAt) {
       console.log(`[Auth] Login failed for ${body.email}: User not found`);
       return res.status(401).json({ message: "Invalid email or password" });
     }
@@ -307,8 +319,9 @@ router.post("/refresh", async (req, res) => {
       type?: string;
     };
     if (decoded.type !== "refresh") throw new Error("Invalid token type");
+    await executeDueDeletions();
     const [user] = await db.select().from(users).where(eq(users.id, decoded.sub)).limit(1);
-    if (!user) return res.status(401).json({ message: "User not found" });
+    if (!user || user.deletedAt) return res.status(401).json({ message: "User not found or account deleted" });
     const { access, refresh } = createTokens(user.id, user.email, user.role);
     return res.json({
       accessToken: access,
@@ -391,8 +404,10 @@ router.post("/reset-password", async (req, res) => {
 });
 
 router.get("/me", requireAuth, async (req: AuthRequest, res) => {
+  await executeDueDeletions();
   const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
-  if (!user) return res.status(404).json({ message: "User not found" });
+  if (!user || user.deletedAt) return res.status(404).json({ message: "User not found" });
+  const deletionStatus = await getDeletionStatus(user.id);
   return res.json({
     id: user.id,
     email: user.email,
@@ -407,7 +422,35 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
     points: user.points,
     badges: user.badges || [],
     onboardingCompletedAt: user.onboardingCompletedAt,
+    accountDeletionScheduledAt: deletionStatus?.scheduledAt ?? null,
   });
+});
+
+router.get("/account/deletion-status", requireAuth, async (req: AuthRequest, res) => {
+  const status = await getDeletionStatus(req.user!.id);
+  if (!status) return res.json({ pending: false });
+  return res.json({
+    pending: true,
+    scheduledAt: status.scheduledAt,
+    requestedAt: status.requestedAt,
+  });
+});
+
+router.post("/account/request-deletion", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const existing = await getDeletionStatus(req.user!.id);
+    if (existing) return res.status(400).json({ message: "Deletion already scheduled" });
+    const { scheduledAt } = await requestAccountDeletion(req.user!.id);
+    return res.json({ scheduledAt, message: "Account will be deleted in 7 days. You can cancel before then." });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to schedule deletion" });
+  }
+});
+
+router.post("/account/cancel-deletion", requireAuth, async (req: AuthRequest, res) => {
+  await cancelAccountDeletion(req.user!.id);
+  return res.json({ message: "Account deletion cancelled" });
 });
 
 router.patch("/me", requireAuth, async (req: AuthRequest, res) => {

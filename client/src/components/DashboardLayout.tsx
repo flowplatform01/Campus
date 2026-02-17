@@ -26,7 +26,8 @@ import {
   Trophy,
   UserCircle,
   Wifi,
-  WifiOff
+  WifiOff,
+  LifeBuoy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { OnboardingModal } from './OnboardingModal';
@@ -245,6 +246,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     <DropdownMenuItem onClick={() => setLocation('/profile')}>
                       <UserCircle className="w-4 h-4 mr-2" />
                       Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setLocation('/get-in-touch')}>
+                      <LifeBuoy className="w-4 h-4 mr-2" />
+                      Get In Touch
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleLogout}>

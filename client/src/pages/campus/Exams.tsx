@@ -546,9 +546,19 @@ export default function CampusExamsPage() {
                       <Label>&nbsp;</Label>
                       <Button
                         onClick={() => saveMarks.mutate()}
-                        disabled={saveMarks.isPending || !marksEntry.classId || !marksEntry.subjectId || rosterStudents.length === 0}
+                        disabled={
+                          saveMarks.isPending ||
+                          !marksEntry.classId ||
+                          !marksEntry.subjectId ||
+                          rosterStudents.length === 0 ||
+                          selectedExamForMarks?.status === 'published'
+                        }
                       >
-                        {saveMarks.isPending ? 'Saving...' : 'Save Marks'}
+                        {selectedExamForMarks?.status === 'published'
+                          ? 'Grades locked (published)'
+                          : saveMarks.isPending
+                            ? 'Saving...'
+                            : 'Save Marks'}
                       </Button>
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { api } from "./lib/api";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -76,29 +77,26 @@ function Router() {
   const [location] = useLocation();
 
   useEffect(() => {
-    try {
-      const qs = location.split("?")[1] || "";
-      if (!qs) return;
-      const params = new URLSearchParams(qs);
-      const ref = params.get("ref");
-      if (!ref) return;
+    const qs = location.split("?")[1] || "";
+    if (!qs) return;
+    const params = new URLSearchParams(qs);
+    const ref = params.get("ref");
+    if (!ref) return;
 
-      const normalized = String(ref).trim();
-      if (!normalized) return;
+    const normalized = String(ref).trim();
+    if (!normalized || !normalized.startsWith("CAMPUS-")) return;
 
-      localStorage.setItem("campus_referred_by", normalized);
+    localStorage.setItem("campus_referred_by", normalized);
 
-      const countedKey = `campus_referral_counted:${normalized}`;
-      if (sessionStorage.getItem(countedKey) === "1") return;
+    const countedKey = `campus_referral_counted:${normalized}`;
+    if (sessionStorage.getItem(countedKey) === "1") return;
 
-      const counterKey = `campus_referrals_count:${normalized}`;
-      const current = Number(localStorage.getItem(counterKey) || 0);
-      const next = Number.isFinite(current) ? current + 1 : 1;
-      localStorage.setItem(counterKey, String(next));
+    const sessionId = sessionStorage.getItem("campus_session_id") || `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem("campus_session_id", sessionId);
+
+    api.referrals.record(normalized, sessionId).then(() => {
       sessionStorage.setItem(countedKey, "1");
-    } catch {
-      // ignore
-    }
+    }).catch(() => { /* fire-and-forget */ });
   }, [location]);
 
   return (

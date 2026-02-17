@@ -73,11 +73,17 @@ async function request<T>(
     return fetch(url, { ...options, headers: nextHeaders });
   }
 
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    throw new Error("No internet connection. Please check your network and try again.");
+  }
+
   let res: Response;
   try {
     res = await doFetch(token);
   } catch {
-    throw new Error("Unable to reach server");
+    throw new Error(typeof navigator !== "undefined" && !navigator.onLine
+      ? "No internet connection. Please check your network and try again."
+      : "Unable to reach server. Please try again.");
   }
 
   if (res.status === 401) {
@@ -92,9 +98,26 @@ async function request<T>(
   }
 
   const contentType = res.headers.get("content-type") || "";
-  const data = contentType.includes("application/json") ? await res.json().catch(() => ({})) : {};
+  let data: Record<string, unknown> = {};
+  if (contentType.includes("application/json")) {
+    try {
+      data = (await res.json()) as Record<string, unknown>;
+    } catch {
+      data = {};
+    }
+  }
   if (!res.ok) {
-    throw new Error(data.message || "Request failed");
+    const msg = typeof data?.message === "string" ? data.message : null;
+    const friendly = msg && !/^(Unexpected token|SyntaxError|<\w)/i.test(msg)
+      ? msg
+      : res.status === 401
+        ? "Session expired. Please log in again."
+        : res.status === 403
+          ? "You don't have permission to do that."
+          : res.status >= 500
+            ? "Something went wrong. Please try again later."
+            : "Request failed. Please try again.";
+    throw new Error(friendly);
   }
   return data as T;
 }
@@ -178,6 +201,14 @@ export const api = {
         body: JSON.stringify(data),
       });
     },
+    account: {
+      deletionStatus: async () =>
+        request<{ pending: false } | { pending: true; scheduledAt: string; requestedAt: string }>("/api/auth/account/deletion-status"),
+      requestDeletion: async () =>
+        request<{ scheduledAt: string; message: string }>("/api/auth/account/request-deletion", { method: "POST" }),
+      cancelDeletion: async () =>
+        request<{ message: string }>("/api/auth/account/cancel-deletion", { method: "POST" }),
+    },
     verifyEmail: async (token: string): Promise<void> => {
       return request("/api/auth/verify-email", {
         method: "POST",
@@ -243,6 +274,14 @@ export const api = {
   },
   schedule: {
     get: async () => request("/api/academics/schedule"),
+  },
+  referrals: {
+    me: async () => request<{ referralCode: string; referralCount: number }>("/api/referrals/me"),
+    record: async (referralCode: string, sessionId?: string) =>
+      request<{ recorded: boolean; duplicate?: boolean }>("/api/referrals/record", {
+        method: "POST",
+        body: JSON.stringify({ referralCode, sessionId }),
+      }),
   },
   notifications: {
     getAll: async () => request("/api/notifications"),

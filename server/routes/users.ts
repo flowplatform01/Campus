@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "../db.js";
@@ -33,7 +33,7 @@ router.get("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res) 
     const rows = await db
       .select()
       .from(users)
-      .where(and(eq(users.schoolId, schoolId)))
+      .where(and(eq(users.schoolId, schoolId), isNull(users.deletedAt)))
       .orderBy(users.createdAt);
     return res.json(rows);
   } catch (error: any) {
@@ -47,7 +47,7 @@ router.get("/staff", requireAuth, requireTenantAccess, async (req: AuthRequest, 
     const schoolId = req.user!.schoolId;
     if (!schoolId) return res.status(400).json({ message: "No school linked" });
     
-    const rows = await db.select().from(users).where(and(eq(users.schoolId, schoolId), eq(users.role, "employee")));
+    const rows = await db.select().from(users).where(and(eq(users.schoolId, schoolId), eq(users.role, "employee"), isNull(users.deletedAt)));
     return res.json(rows.map(u => ({ id: u.id, name: u.name, subRole: u.subRole, schoolId: u.schoolId })));
   } catch (e) {
     return res.status(500).json({ message: "Failed to list staff" });
@@ -118,7 +118,7 @@ router.get("/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, re
     const requesterSchoolId = requester.schoolId ?? null;
     if (!requesterSchoolId) return res.status(400).json({ message: "User is not linked to a school" });
 
-    const [user] = await db.select().from(users).where(eq(users.id, req.params.id!)).limit(1);
+    const [user] = await db.select().from(users).where(and(eq(users.id, req.params.id!), isNull(users.deletedAt))).limit(1);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (!validateTenantAccess(requesterSchoolId, user.schoolId ?? "")) {

@@ -2,7 +2,7 @@ import { useLocation } from 'wouter';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMode } from '@/contexts/ModeContext';
 import { cn } from '@/lib/utils';
-import { Home, BookOpen, MessageCircle, Users, Plus, Building2, Globe, User, Settings } from 'lucide-react';
+import { Home, BookOpen, MessageCircle, Users, Plus, Building2, Globe, User, Settings, LifeBuoy } from 'lucide-react';
 import { useState } from 'react';
 import {
   Dialog,
@@ -22,6 +22,7 @@ export function BottomNavigation() {
   const campusNavItems = [
     { icon: Home, label: 'Home', path: `/dashboard/${user.role}` },
     { icon: BookOpen, label: 'Academics', path: '/campus/academics' },
+    { icon: LifeBuoy, label: 'Support', path: '/get-in-touch' },
     { icon: User, label: 'Profile', path: '/profile' },
     { icon: Settings, label: 'Settings', path: '/settings' }
   ];
@@ -30,6 +31,7 @@ export function BottomNavigation() {
     { icon: Globe, label: 'Feed', path: '/dashboard/social' },
     { icon: MessageCircle, label: 'Chats', path: '/social/chats' },
     { icon: Plus, label: 'Post', action: 'post' },
+    { icon: LifeBuoy, label: 'Support', path: '/get-in-touch' },
     { icon: Users, label: 'Connect', path: '/social/communities' },
     { icon: Building2, label: 'Campus', action: 'switchToCampus' }
   ];

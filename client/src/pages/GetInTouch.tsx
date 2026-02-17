@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Copy, MessageCircle, Share2, Users } from 'lucide-react';
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 
 function safeOrigin() {
   if (typeof window === 'undefined') return '';
@@ -16,19 +18,17 @@ export default function GetInTouch() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const referralCode = useMemo(() => {
-    const id = user?.id || 'guest';
-    return `CAMPUS-${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase()}`;
-  }, [user?.id]);
+  const { data: referralData, isLoading: referralLoading } = useQuery({
+    queryKey: ['referrals-me'],
+    queryFn: api.referrals.me,
+    enabled: !!user,
+  });
+
+  const referralCode = referralData?.referralCode ?? (user ? `CAMPUS-${(user.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase()}` : '');
+  const referralCount = referralData?.referralCount ?? 0;
 
   const referralLink = useMemo(() => {
     return `${safeOrigin()}/?ref=${encodeURIComponent(referralCode)}`;
-  }, [referralCode]);
-
-  const referralCount = useMemo(() => {
-    const key = `campus_referrals_count:${referralCode}`;
-    const n = Number(localStorage.getItem(key) || 0);
-    return Number.isFinite(n) ? n : 0;
   }, [referralCode]);
 
   const copyLink = async () => {
@@ -88,9 +88,9 @@ export default function GetInTouch() {
                 <MessageCircle className="w-4 h-4 mr-2" />
                 Share via WhatsApp
               </Button>
-              <Button variant="outline" className="w-full">
+              <Button variant="outline" className="w-full" disabled tabIndex={-1}>
                 <Users className="w-4 h-4 mr-2" />
-                {referralCount} Referred
+                {referralLoading ? '...' : `${referralCount} Referred`}
               </Button>
             </div>
           </CardContent>
