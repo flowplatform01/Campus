@@ -22,6 +22,41 @@ const createCommentSchema = z.object({
   parentId: z.string().optional(),
 });
 
+async function requirePostMutationAccess(postId: string, req: AuthRequest, res: any) {
+  const user = req.user!;
+  const schoolId = user.schoolId ?? null;
+
+  const [post] = await db
+    .select({ id: posts.id, schoolId: posts.schoolId, visibility: posts.visibility })
+    .from(posts)
+    .where(eq(posts.id, postId))
+    .limit(1);
+  if (!post) {
+    res.status(404).json({ message: "Post not found" });
+    return null;
+  }
+
+  // For public posts allow mutations only if:
+  // - user has no school: post must be public
+  // - user has a school: post is public OR belongs to same school
+  if (!schoolId) {
+    if (post.visibility !== "public") {
+      res.status(403).json({ message: "Not allowed" });
+      return null;
+    }
+    return post;
+  }
+
+  if (post.visibility === "public") return post;
+
+  if (!validateTenantAccess(schoolId, post.schoolId ?? "")) {
+    res.status(403).json({ message: "Cross-tenant access denied" });
+    return null;
+  }
+
+  return post;
+}
+
 router.get("/posts", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
@@ -189,11 +224,14 @@ router.post("/posts", requireAuth, requireTenantAccess, async (req: AuthRequest,
   }
 });
 
-router.post("/posts/:id/like", requireAuth, async (req: AuthRequest, res) => {
+router.post("/posts/:id/like", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const postId = req.params.id;
   const userId = req.user!.id;
   if (!postId) return res.status(400).json({ message: "Post ID required" });
   try {
+    const allowed = await requirePostMutationAccess(postId, req, res);
+    if (!allowed) return;
+
     const [existing] = await db
       .select()
       .from(postLikes)
@@ -219,10 +257,13 @@ router.post("/posts/:id/like", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/posts/:id/comments", requireAuth, async (req: AuthRequest, res) => {
+router.post("/posts/:id/comments", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const postId = req.params.id;
   if (!postId) return res.status(400).json({ message: "Post ID required" });
   try {
+    const allowed = await requirePostMutationAccess(postId, req, res);
+    if (!allowed) return;
+
     const body = createCommentSchema.parse(req.body);
     const [comment] = await db
       .insert(comments)

@@ -1,9 +1,9 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMode } from '@/contexts/ModeContext';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -24,10 +24,14 @@ import {
   Menu,
   X,
   Trophy,
-  UserCircle
+  UserCircle,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { OnboardingModal } from './OnboardingModal';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -35,9 +39,43 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user, logout } = useAuth();
-  const { isCampusMode } = useMode();
+  const { isCampusMode, isSocialMode } = useMode();
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const [showSocialComingSoon, setShowSocialComingSoon] = useState(false);
+
+  const { data: unread } = useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: () => requestUnreadCount(),
+    enabled: !!user,
+    refetchInterval: 30000,
+  });
+
+  const unreadCount = (unread as any)?.count ?? 0;
+
+  async function requestUnreadCount() {
+    return api.notifications.unreadCount();
+  }
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSocialMode) return;
+    const key = 'campus_social_coming_soon_dismissed';
+    const dismissed = sessionStorage.getItem(key);
+    if (dismissed === '1') return;
+    setShowSocialComingSoon(true);
+  }, [isSocialMode]);
 
   const handleLogout = () => {
     logout();
@@ -47,6 +85,57 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-background pb-16 md:pb-0">
       <OnboardingModal />
+
+      <AnimatePresence>
+        {isSocialMode && showSocialComingSoon && (
+          <motion.div
+            key="social-coming-soon"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60]"
+          >
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.99 }}
+                className="w-full max-w-lg rounded-xl border bg-background/95 shadow-2xl"
+              >
+                <div className="p-6">
+                  <h2 className="text-2xl font-semibold">Stay Tuned!</h2>
+                  <p className="mt-2 text-muted-foreground">
+                    Social Features Coming Soon.
+                  </p>
+                  <div className="mt-5 flex flex-col sm:flex-row gap-3">
+                    <Button
+                      className="w-full"
+                      onClick={() => {
+                        sessionStorage.setItem('campus_social_coming_soon_dismissed', '1');
+                        setShowSocialComingSoon(false);
+                      }}
+                    >
+                      Continue
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        sessionStorage.setItem('campus_social_coming_soon_dismissed', '1');
+                        setShowSocialComingSoon(false);
+                        setLocation(`/dashboard/${user?.role || 'student'}`);
+                      }}
+                    >
+                      Back to Campus
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       <div className="lg:flex">
         <AnimatePresence>
@@ -114,6 +203,17 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     {user.points} points
                   </Badge>
                 )}
+
+                <div className="flex items-center gap-1" title={isOnline ? 'Online' : 'Offline'}>
+                  {isOnline ? (
+                    <Wifi className="h-4 w-4 text-emerald-500 animate-pulse" />
+                  ) : (
+                    <WifiOff className="h-4 w-4 text-red-500 animate-pulse" />
+                  )}
+                  <div
+                    className={`h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}`}
+                  />
+                </div>
                 
                 <ModeSwitcher />
                 <ThemeToggle />
@@ -125,14 +225,17 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   onClick={() => setLocation('/notifications')}
                 >
                   <Bell className="w-5 h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+                  )}
                 </Button>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                       <Avatar>
-                        <AvatarFallback>{user?.avatar || user?.name?.charAt(0)}</AvatarFallback>
+                        <AvatarImage src={user?.avatar || undefined} />
+                        <AvatarFallback>{user?.name?.charAt(0)}</AvatarFallback>
                       </Avatar>
                     </Button>
                   </DropdownMenuTrigger>

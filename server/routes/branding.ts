@@ -1,16 +1,20 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth, AuthRequest } from "../middleware/auth.js";
+import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } from "../middleware/auth.js";
 import { SchoolBrandingService } from "../services/school-branding-service.js";
 
 const router = Router();
 
 // Get school branding information
-router.get("/", requireAuth, async (req: AuthRequest, res) => {
+router.get("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = req.user!.schoolId;
     if (!schoolId) {
       return res.status(400).json({ message: "User is not linked to a school" });
+    }
+
+    if (!validateTenantAccess(schoolId, req.user!.schoolId!)) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
     }
 
     const branding = await SchoolBrandingService.getSchoolBranding(schoolId);
@@ -39,13 +43,17 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Update school branding
-router.patch("/", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
     if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
     if (user.role !== "admin") {
       return res.status(403).json({ message: "Not allowed" });
+    }
+
+    if (!validateTenantAccess(schoolId, req.user!.schoolId!)) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
     }
 
     const body = req.body;
@@ -89,13 +97,17 @@ router.patch("/", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Upload school logo
-router.post("/logo", requireAuth, async (req: AuthRequest, res) => {
+router.post("/logo", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
     if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
     if (user.role !== "admin") {
       return res.status(403).json({ message: "Not allowed" });
+    }
+
+    if (!validateTenantAccess(schoolId, req.user!.schoolId!)) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
     }
 
     // This would need to be integrated with the upload route

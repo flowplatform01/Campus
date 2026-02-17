@@ -12,6 +12,9 @@ export const config = {
   port: parseInt(process.env.PORT || "3001", 10),
   nodeEnv: process.env.NODE_ENV || "development",
   clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+  },
   jwt: {
     secret: process.env.JWT_SECRET || "change-me-in-production",
     refreshSecret: process.env.JWT_REFRESH_SECRET || "change-me-in-production",

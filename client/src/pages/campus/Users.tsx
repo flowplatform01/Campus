@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { MoreHorizontal, IdCard, FileText } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useLocation } from 'wouter';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -19,6 +20,7 @@ export default function CampusUsersPage() {
   useRequireAuth(['admin']);
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['campus-users'],
@@ -40,7 +42,7 @@ export default function CampusUsersPage() {
   const [form, setForm] = useState({
     name: '',
     email: '',
-    password: 'Campus@12345',
+    password: '',
     role: 'student',
     subRole: '',
     studentId: '',
@@ -331,8 +333,12 @@ export default function CampusUsersPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setLocation(`/campus/users/${u.id}/info`)}>
+                            <FileText className="h-4 w-4 mr-2" />
+                            Info
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => generateIdCard(u)}>
-                            <IdCard className="mr-2 h-4 w-4" />
+                            <IdCard className="h-4 w-4 mr-2" />
                             ID Card
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => generateCertificate(u)}>

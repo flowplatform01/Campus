@@ -21,9 +21,34 @@ import { requireAuth, AuthRequest, requireTenantAccess } from "../middleware/aut
 const router = Router();
 
 // ---------- School discovery (for students/parents/employees) ----------
-router.get("/schools", requireAuth, async (_req: AuthRequest, res) => {
+router.get("/schools", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const list = await db.select({ id: schools.id, name: schools.name, address: schools.address }).from(schools).limit(100);
+    const q = String(req.query.q ?? "").trim();
+
+    const role = req.user?.role;
+    const enabledExpr =
+      role === "student"
+        ? schools.studentApplicationsEnabled
+        : role === "parent"
+          ? schools.parentApplicationsEnabled
+          : role === "employee"
+            ? schools.staffApplicationsEnabled
+            : sql<boolean>`true`;
+
+    const base = db
+      .select({
+        id: schools.id,
+        name: schools.name,
+        address: schools.address,
+        logoUrl: schools.logoUrl,
+        phone: schools.phone,
+        email: schools.email,
+        enrollmentOpen: sql<boolean>`(${schools.enrollmentOpen} and ${enabledExpr})`,
+      })
+      .from(schools);
+    const list = q
+      ? await base.where(sql`lower(${schools.name}) like ${`%${q.toLowerCase()}%`}`).limit(100)
+      : await base.limit(100);
     return res.json(list);
   } catch (e) {
     return res.status(500).json({ message: "Failed to list schools" });
@@ -146,19 +171,67 @@ router.patch("/applications/:id", requireAuth, requireTenantAccess, async (req: 
 
 // ---------- Admin: enrollment settings (defaults) ----------
 router.get("/settings", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
-  if (req.user!.role !== "admin") return res.status(403).json({ message: "Not allowed" });
-  return res.json({
-    studentApplicationsEnabled: true,
-    parentApplicationsEnabled: true,
-    staffApplicationsEnabled: true,
-    autoApprovalEnabled: false,
-    requiredDocuments: [],
-  });
+  try {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Not allowed" });
+    const schoolId = req.user!.schoolId!;
+    const [row] = await db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
+    if (!row) return res.status(404).json({ message: "School not found" });
+    return res.json({
+      enrollmentOpen: row.enrollmentOpen,
+      studentApplicationsEnabled: row.studentApplicationsEnabled,
+      parentApplicationsEnabled: row.parentApplicationsEnabled,
+      staffApplicationsEnabled: row.staffApplicationsEnabled,
+      autoApprovalEnabled: false,
+      requiredDocuments: [],
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to load enrollment settings" });
+  }
 });
 
 router.patch("/settings", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
-  if (req.user!.role !== "admin") return res.status(403).json({ message: "Not allowed" });
-  return res.json({ message: "Settings updated" });
+  try {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Not allowed" });
+    const schoolId = req.user!.schoolId!;
+
+    const body = z
+      .object({
+        enrollmentOpen: z.boolean().optional(),
+        studentApplicationsEnabled: z.boolean().optional(),
+        parentApplicationsEnabled: z.boolean().optional(),
+        staffApplicationsEnabled: z.boolean().optional(),
+        autoApprovalEnabled: z.boolean().optional(),
+        requiredDocuments: z.array(z.string()).optional(),
+      })
+      .parse(req.body);
+
+    const [row] = await db
+      .update(schools)
+      .set({
+        ...(typeof body.enrollmentOpen === "boolean" ? { enrollmentOpen: body.enrollmentOpen } : {}),
+        ...(typeof body.studentApplicationsEnabled === "boolean" ? { studentApplicationsEnabled: body.studentApplicationsEnabled } : {}),
+        ...(typeof body.parentApplicationsEnabled === "boolean" ? { parentApplicationsEnabled: body.parentApplicationsEnabled } : {}),
+        ...(typeof body.staffApplicationsEnabled === "boolean" ? { staffApplicationsEnabled: body.staffApplicationsEnabled } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(schools.id, schoolId))
+      .returning();
+    if (!row) return res.status(404).json({ message: "School not found" });
+
+    return res.json({
+      enrollmentOpen: row.enrollmentOpen,
+      studentApplicationsEnabled: row.studentApplicationsEnabled,
+      parentApplicationsEnabled: row.parentApplicationsEnabled,
+      staffApplicationsEnabled: row.staffApplicationsEnabled,
+      autoApprovalEnabled: false,
+      requiredDocuments: [],
+    });
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input", errors: e.errors });
+    console.error(e);
+    return res.status(500).json({ message: "Failed to update enrollment settings" });
+  }
 });
 
 // ---------- Student: my applications ----------
@@ -171,6 +244,13 @@ router.get("/student/applications", requireAuth, async (req: AuthRequest, res) =
 router.post("/student/apply", requireAuth, async (req: AuthRequest, res) => {
   if (req.user!.role !== "student") return res.status(403).json({ message: "Not allowed" });
   const body = z.object({ schoolId: z.string(), classId: z.string(), guardianName: z.string(), guardianContact: z.string(), guardianEmail: z.string(), dateOfBirth: z.string(), address: z.string(), medicalInfo: z.string().optional(), documents: z.array(z.string()) }).parse(req.body);
+
+  const [school] = await db.select().from(schools).where(eq(schools.id, body.schoolId)).limit(1);
+  if (!school) return res.status(404).json({ message: "School not found" });
+  if (!school.enrollmentOpen || !school.studentApplicationsEnabled) {
+    return res.status(400).json({ message: "School is not currently accepting student applications" });
+  }
+
   const [row] = await db.insert(enrollmentApplications).values({ type: "student_self", schoolId: body.schoolId, applicantUserId: req.user!.id, status: "submitted", classId: body.classId, payload: body }).returning();
   return res.status(201).json(row);
 });

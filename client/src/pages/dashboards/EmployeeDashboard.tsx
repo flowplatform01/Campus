@@ -197,29 +197,7 @@ export default function EmployeeDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-              <CardDescription>Common tasks</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {[
-                  'Enter Grades',
-                  'Create Assignment',
-                  'Mark Attendance',
-                  'Send Announcement'
-                ].map((action) => (
-                  <button
-                    key={action}
-                    className="w-full text-left p-3 rounded-lg border hover:bg-accent transition-colors"
-                  >
-                    {action}
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <div />
         </div>
       </div>
     </DashboardLayout>

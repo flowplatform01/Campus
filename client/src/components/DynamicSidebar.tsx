@@ -9,7 +9,7 @@ import {
   BarChart3, DollarSign, Shield, Trophy, ClipboardList,
   Bell, FileText, GraduationCap, Briefcase, Globe,
   LayoutDashboard, UserCog, Megaphone, PieChart,
-  FileSpreadsheet, Receipt, UserCheck, TrendingUp
+  FileSpreadsheet, Receipt, UserCheck, TrendingUp, LifeBuoy
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 import { Permission } from '@/lib/permissions';
@@ -130,6 +130,11 @@ export function DynamicSidebar() {
       label: 'Admin', 
       path: '/campus/admin',
       permission: 'manage_school_settings'
+    },
+    {
+      icon: LifeBuoy,
+      label: 'Get In Touch',
+      path: '/get-in-touch',
     }
   ];
 

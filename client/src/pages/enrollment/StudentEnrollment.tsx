@@ -17,9 +17,15 @@ export default function StudentEnrollmentPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const trimmedQuery = searchTerm.trim();
+  const shouldSearch = trimmedQuery.length >= 2;
+
   const { data: schools, isLoading: schoolsLoading } = useQuery({
-    queryKey: ['schools-for-enrollment'],
-    queryFn: () => api.enrollment.schools.search(),
+    queryKey: ['schools-for-enrollment', searchTerm],
+    queryFn: () => api.enrollment.schools.search(trimmedQuery),
+    enabled: shouldSearch,
   });
 
   const { data: applications = [], isLoading: appsLoading } = useQuery({
@@ -41,12 +47,7 @@ export default function StudentEnrollmentPage() {
     documents: [] as File[],
   });
 
-  const [searchTerm, setSearchTerm] = useState('');
-
-  const filteredSchools = schools?.filter(school =>
-    school.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    school.enrollmentOpen
-  ) || [];
+  const filteredSchools = schools || [];
 
   const submitApplication = useMutation({
     mutationFn: () => api.enrollment.student.apply({
@@ -134,13 +135,24 @@ export default function StudentEnrollmentPage() {
                   <div className="space-y-3 max-h-64 overflow-y-auto">
                     {schoolsLoading ? (
                       <div className="text-center py-8">Loading schools...</div>
+                    ) : !shouldSearch ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        Start typing to find schools
+                      </div>
                     ) : filteredSchools.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         No schools found matching your search
                       </div>
                     ) : (
                       filteredSchools.map((school: any) => (
-                        <div key={school.id} className="p-4 border rounded-lg hover:bg-accent cursor-pointer transition-colors">
+                        <div
+                          key={school.id}
+                          className={`p-4 border rounded-lg transition-colors ${school.enrollmentOpen ? 'hover:bg-accent cursor-pointer' : 'opacity-75 cursor-not-allowed'}`}
+                          onClick={() => {
+                            if (!school.enrollmentOpen) return;
+                            setApplicationForm({ ...applicationForm, schoolId: school.id });
+                          }}
+                        >
                           <div className="flex items-start justify-between">
                             <div>
                               <h3 className="font-semibold">{school.name}</h3>

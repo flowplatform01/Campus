@@ -183,11 +183,12 @@ router.get("/assignments", requireAuth, requireTenantAccess, async (req: AuthReq
 });
 
 // Submit assignment with file upload
-router.post("/assignments/:id/submit", requireAuth, async (req: AuthRequest, res) => {
+router.post("/assignments/:id/submit", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const { submissionText } = req.body;
     const assignmentId = req.params.id!;
     const studentId = req.user!.id;
+    const userSchoolId = req.user!.schoolId!;
 
     // Verify assignment exists and is published
     const [assignment] = await db
@@ -200,6 +201,10 @@ router.post("/assignments/:id/submit", requireAuth, async (req: AuthRequest, res
       return res.status(404).json({ message: "Assignment not found or not published" });
     }
 
+    if (!validateTenantAccess(userSchoolId, assignment.schoolId ?? "")) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
+    }
+
     // Check if already submitted
     const [existingSubmission] = await db
       .select()
@@ -207,7 +212,8 @@ router.post("/assignments/:id/submit", requireAuth, async (req: AuthRequest, res
       .where(
         and(
           eq(smsAssignmentSubmissions.assignmentId, assignmentId),
-          eq(smsAssignmentSubmissions.studentId, studentId)
+          eq(smsAssignmentSubmissions.studentId, studentId),
+          eq(smsAssignmentSubmissions.schoolId, userSchoolId)
         )
       )
       .limit(1);
@@ -220,7 +226,7 @@ router.post("/assignments/:id/submit", requireAuth, async (req: AuthRequest, res
     const submissionData: InsertAssignmentSubmission = {
       assignmentId,
       studentId,
-      schoolId: req.user!.schoolId!,
+      schoolId: userSchoolId,
       submissionText: submissionText || null,
     };
     

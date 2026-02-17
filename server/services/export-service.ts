@@ -34,13 +34,13 @@ export async function generateExcelReport(data: any[], type: string): Promise<Bu
 }
 
 // Generate Academic Report for Student
-export async function generateStudentReport(studentId: string, academicYearId?: string, termId?: string) {
+export async function generateStudentReport(schoolId: string, studentId: string, academicYearId?: string, termId?: string) {
   try {
     // Get student info
     const [student] = await db
       .select()
       .from(users)
-      .where(eq(users.id, studentId))
+      .where(and(eq(users.id, studentId), eq(users.schoolId, schoolId)))
       .limit(1);
 
     if (!student) {
@@ -53,6 +53,7 @@ export async function generateStudentReport(studentId: string, academicYearId?: 
       .from(studentEnrollments)
       .where(
         and(
+          eq(studentEnrollments.schoolId, schoolId),
           eq(studentEnrollments.studentId, studentId),
           academicYearId ? eq(studentEnrollments.academicYearId, academicYearId) : undefined,
           termId ? eq(studentEnrollments.termId, termId) : undefined,
@@ -90,6 +91,9 @@ export async function generateStudentReport(studentId: string, academicYearId?: 
       .innerJoin(subjects, eq(smsAssignments.subjectId, subjects.id))
       .where(
         and(
+          eq(smsAssignmentSubmissions.schoolId, schoolId),
+          eq(smsAssignments.schoolId, schoolId),
+          eq(subjects.schoolId, schoolId),
           eq(smsAssignmentSubmissions.studentId, studentId),
           eq(smsAssignments.academicYearId, enrollment.academicYearId),
           termId ? eq(smsAssignments.termId, termId) : undefined
@@ -112,6 +116,9 @@ export async function generateStudentReport(studentId: string, academicYearId?: 
       .innerJoin(subjects, eq(smsAttendanceSessions.subjectId, subjects.id))
       .where(
         and(
+          eq(smsAttendanceEntries.schoolId, schoolId),
+          eq(smsAttendanceSessions.schoolId, schoolId),
+          eq(subjects.schoolId, schoolId),
           eq(smsAttendanceEntries.studentId, studentId),
           eq(smsAttendanceSessions.academicYearId, enrollment.academicYearId),
           termId ? eq(smsAttendanceSessions.termId, termId) : undefined
@@ -144,7 +151,7 @@ export async function generateStudentReport(studentId: string, academicYearId?: 
 }
 
 // Generate Class Performance Report
-export async function generateClassReport(classId: string, academicYearId?: string, termId?: string) {
+export async function generateClassReport(schoolId: string, classId: string, academicYearId?: string, termId?: string) {
   try {
     // Get all students in class
     const students = await db
@@ -160,6 +167,8 @@ export async function generateClassReport(classId: string, academicYearId?: stri
       .innerJoin(users, eq(studentEnrollments.studentId, users.id))
       .where(
         and(
+          eq(studentEnrollments.schoolId, schoolId),
+          eq(users.schoolId, schoolId),
           eq(studentEnrollments.classId, classId),
           academicYearId ? eq(studentEnrollments.academicYearId, academicYearId) : undefined,
           termId ? eq(studentEnrollments.termId, termId) : undefined,
@@ -180,7 +189,9 @@ export async function generateClassReport(classId: string, academicYearId?: stri
           .innerJoin(smsAssignments, eq(smsAssignmentSubmissions.assignmentId, smsAssignments.id))
           .where(
             and(
-              studentData.student.studentId ? eq(smsAssignmentSubmissions.studentId, studentData.student.studentId) : undefined,
+              eq(smsAssignmentSubmissions.schoolId, schoolId),
+              eq(smsAssignments.schoolId, schoolId),
+              eq(smsAssignmentSubmissions.studentId, studentData.enrollment.studentId),
               eq(smsAssignments.classId, classId),
               academicYearId ? eq(smsAssignments.academicYearId, academicYearId) : undefined,
               termId ? eq(smsAssignments.termId, termId) : undefined,
@@ -220,7 +231,7 @@ export async function generateClassReport(classId: string, academicYearId?: stri
 }
 
 // Generate Attendance Summary Report
-export async function generateAttendanceReport(classId?: string, academicYearId?: string, termId?: string) {
+export async function generateAttendanceReport(schoolId: string, classId?: string, academicYearId?: string, termId?: string) {
   try {
     const attendanceRecords = await db
       .select({
@@ -246,6 +257,12 @@ export async function generateAttendanceReport(classId?: string, academicYearId?
       .leftJoin(classSections, eq(studentEnrollments.sectionId, classSections.id))
       .where(
         and(
+          eq(smsAttendanceEntries.schoolId, schoolId),
+          eq(smsAttendanceSessions.schoolId, schoolId),
+          eq(subjects.schoolId, schoolId),
+          eq(users.schoolId, schoolId),
+          eq(studentEnrollments.schoolId, schoolId),
+          eq(schoolClasses.schoolId, schoolId),
           classId ? eq(studentEnrollments.classId, classId) : undefined,
           academicYearId ? eq(smsAttendanceSessions.academicYearId, academicYearId) : undefined,
           termId ? eq(smsAttendanceSessions.termId, termId) : undefined

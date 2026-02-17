@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ModeProvider } from "@/contexts/ModeContext";
+import { useEffect } from "react";
 import NotFound from "@/pages/not-found";
 import RoleSelection from "@/pages/RoleSelection";
 import Login from "@/pages/Login";
@@ -25,7 +26,9 @@ import Achievements from "@/pages/Achievements";
 import Profile from "@/pages/Profile";
 import Settings from "@/pages/Settings";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import GetInTouch from "@/pages/GetInTouch";
 import CampusUsersPage from "@/pages/campus/Users";
+import CampusUserInfoPage from "@/pages/campus/UserInfo";
 import CampusAcademicsPage from "@/pages/campus/Academics";
 import CampusAttendancePage from "@/pages/campus/Attendance";
 import CampusAssignmentsPage from "@/pages/campus/Assignments";
@@ -70,6 +73,34 @@ function RootRedirect() {
 }
 
 function Router() {
+  const [location] = useLocation();
+
+  useEffect(() => {
+    try {
+      const qs = location.split("?")[1] || "";
+      if (!qs) return;
+      const params = new URLSearchParams(qs);
+      const ref = params.get("ref");
+      if (!ref) return;
+
+      const normalized = String(ref).trim();
+      if (!normalized) return;
+
+      localStorage.setItem("campus_referred_by", normalized);
+
+      const countedKey = `campus_referral_counted:${normalized}`;
+      if (sessionStorage.getItem(countedKey) === "1") return;
+
+      const counterKey = `campus_referrals_count:${normalized}`;
+      const current = Number(localStorage.getItem(counterKey) || 0);
+      const next = Number.isFinite(current) ? current + 1 : 1;
+      localStorage.setItem(counterKey, String(next));
+      sessionStorage.setItem(countedKey, "1");
+    } catch {
+      // ignore
+    }
+  }, [location]);
+
   return (
     <Switch>
       <Route path="/">{() => <RootRedirect />}</Route>
@@ -118,12 +149,19 @@ function Router() {
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}
       </Route>
+      <Route path="/get-in-touch">
+        {() => <ProtectedRoute component={GetInTouch} />}
+      </Route>
       <Route path="/notifications">
         {() => <ProtectedRoute component={Notifications} />}
       </Route>
       
       <Route path="/campus/users">
         {() => <ProtectedRoute component={CampusUsersPage} allowedRoles={['admin']} />}
+      </Route>
+
+      <Route path="/campus/users/:id/info">
+        {() => <ProtectedRoute component={CampusUserInfoPage} allowedRoles={['admin']} />}
       </Route>
       <Route path="/enrollment/student">
         {() => <ProtectedRoute component={StudentEnrollmentPage} allowedRoles={['student']} />}

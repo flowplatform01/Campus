@@ -11,31 +11,81 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { User, Bell, Lock, Globe, Trash2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/lib/api';
 
 export default function Settings() {
   const { user } = useRequireAuth();
+  const { updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    phone: '',
+    phone: user?.phone || '',
     bio: ''
   });
   const [language, setLanguage] = useState('en');
 
-  const handleSaveProfile = () => {
-    toast({
-      title: 'Profile Updated',
-      description: 'Your profile has been saved successfully'
-    });
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const handleSaveProfile = async () => {
+    try {
+      await updateUser({
+        name: profileData.name,
+        phone: profileData.phone,
+      });
+      toast({
+        title: 'Profile Updated',
+        description: 'Your profile has been saved successfully'
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to save profile';
+      toast({
+        title: 'Profile update failed',
+        description: msg,
+        variant: 'destructive'
+      });
+    }
   };
 
-  const handleChangePassword = () => {
-    toast({
-      title: 'Password Changed',
-      description: 'Your password has been updated successfully'
-    });
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      toast({
+        title: 'Missing fields',
+        description: 'Please fill in your current and new password',
+        variant: 'destructive'
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: 'Passwords do not match',
+        description: 'New password and confirmation must match',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      await api.auth.changePassword({ currentPassword, newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      toast({
+        title: 'Password Changed',
+        description: 'Your password has been updated successfully'
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to change password';
+      toast({
+        title: 'Password change failed',
+        description: msg,
+        variant: 'destructive'
+      });
+    }
   };
 
   const handleDeleteAccount = () => {
@@ -129,15 +179,15 @@ export default function Settings() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="current-password">Current Password</Label>
-                  <Input id="current-password" type="password" />
+                  <Input id="current-password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="new-password">New Password</Label>
-                  <Input id="new-password" type="password" />
+                  <Input id="new-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">Confirm Password</Label>
-                  <Input id="confirm-password" type="password" />
+                  <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                 </div>
                 <Button onClick={handleChangePassword}>Update Password</Button>
               </CardContent>

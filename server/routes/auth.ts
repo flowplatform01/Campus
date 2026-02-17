@@ -32,6 +32,114 @@ const registerSchema = z.object({
   subRole: z.string().optional(),
 });
 
+const googleLoginSchema = z.object({
+  idToken: z.string().min(1),
+  role: z.enum(["admin", "student", "parent", "employee"]).optional(),
+});
+
+router.post("/google", async (req, res) => {
+  try {
+    const body = googleLoginSchema.parse(req.body);
+    console.log(`[Auth] Google login attempt:`, { hasRole: !!body.role, role: body.role });
+    const expectedClientId = config.google.clientId;
+    if (!expectedClientId) {
+      return res.status(501).json({ message: "Google auth is not configured" });
+    }
+
+    const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(body.idToken)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      return res.status(401).json({ message: "Invalid Google token" });
+    }
+    const tokenInfo = (await resp.json()) as any;
+    if (tokenInfo.aud !== expectedClientId) {
+      return res.status(401).json({ message: "Invalid Google token audience" });
+    }
+    const email = String(tokenInfo.email || "");
+    if (!email) {
+      return res.status(400).json({ message: "Google token missing email" });
+    }
+
+    const name = String(tokenInfo.name || tokenInfo.given_name || email.split("@")[0] || "User");
+    const avatarUrl = tokenInfo.picture ? String(tokenInfo.picture) : null;
+
+    const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+
+    if (!existing && !body.role) {
+      return res.json({
+        needsRoleSelection: true,
+        profile: {
+          email,
+          name,
+          avatarUrl,
+        },
+      });
+    }
+
+    let schoolId: string | null = null;
+    if (!existing && body.role === "admin") {
+      const [school] = await db
+        .insert(schools)
+        .values({ name: `${name}'s School` })
+        .returning();
+      schoolId = school?.id ?? null;
+    }
+
+    const user =
+      existing ??
+      (
+        await db
+          .insert(users)
+          .values({
+            email,
+            password: await bcrypt.hash(nanoid(16), 10),
+            name,
+            role: body.role!,
+            verified: true,
+            emailVerifiedAt: new Date(),
+            profileCompletion: 20,
+            schoolId,
+            avatarUrl,
+            subRole: body.role === "employee" ? "teacher" : null,
+          })
+          .returning()
+      )[0];
+
+    if (!user) {
+      return res.status(500).json({ message: "Failed to create user" });
+    }
+
+    const { access, refresh } = createTokens(user.id, user.email, user.role);
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      profileCompletion: user.profileCompletion,
+      verified: !!user.emailVerifiedAt,
+      schoolLinked: !!user.schoolId,
+      schoolId: user.schoolId,
+      avatar: user.avatarUrl,
+      points: user.points,
+      badges: user.badges || [],
+      onboardingCompletedAt: user.onboardingCompletedAt,
+    };
+
+    return res.json({
+      user: userResponse,
+      accessToken: access,
+      refreshToken: refresh,
+      expiresIn: 900,
+    });
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
+    console.error(e);
+    return res.status(500).json({ message: "Google login failed" });
+  }
+});
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
@@ -43,6 +151,19 @@ const resetPasswordSchema = z.object({
   password: z.string().min(6),
 });
 const verifyEmailSchema = z.object({ token: z.string() });
+
+const profileUpdateSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    phone: z.string().optional(),
+    avatarUrl: z.string().url().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "No valid fields to update" });
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(6),
+});
 
 function createTokens(userId: string, email: string, role: string) {
   const access = jwt.sign(
@@ -282,10 +403,71 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
     schoolLinked: !!user.schoolId,
     schoolId: user.schoolId,
     avatar: user.avatarUrl,
+    phone: user.phone,
     points: user.points,
     badges: user.badges || [],
     onboardingCompletedAt: user.onboardingCompletedAt,
   });
+});
+
+router.patch("/me", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = profileUpdateSchema.parse(req.body);
+
+    const updates: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+    if (typeof body.name === "string") updates.name = body.name;
+    if (typeof body.phone === "string") updates.phone = body.phone;
+    if (typeof body.avatarUrl === "string") updates.avatarUrl = body.avatarUrl;
+
+    const [row] = await db.update(users).set(updates).where(eq(users.id, req.user!.id)).returning();
+    if (!row) return res.status(404).json({ message: "User not found" });
+
+    return res.json({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      role: row.role,
+      profileCompletion: row.profileCompletion,
+      verified: !!row.emailVerifiedAt,
+      schoolLinked: !!row.schoolId,
+      schoolId: row.schoolId,
+      avatar: row.avatarUrl,
+      phone: row.phone,
+      points: row.points,
+      badges: row.badges || [],
+      onboardingCompletedAt: row.onboardingCompletedAt,
+    });
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      return res.status(400).json({ message: "Invalid input", errors: e.errors });
+    }
+    const message = e instanceof Error ? e.message : "Failed to update profile";
+    return res.status(400).json({ message });
+  }
+});
+
+router.post("/change-password", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = changePasswordSchema.parse(req.body);
+
+    const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const ok = await bcrypt.compare(body.currentPassword, user.password);
+    if (!ok) return res.status(400).json({ message: "Current password is incorrect" });
+
+    const hashed = await bcrypt.hash(body.newPassword, 10);
+    await db.update(users).set({ password: hashed, updatedAt: new Date() }).where(eq(users.id, user.id));
+
+    return res.json({ message: "Password changed" });
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      return res.status(400).json({ message: "Invalid input", errors: e.errors });
+    }
+    return res.status(500).json({ message: "Failed to change password" });
+  }
 });
 
 router.patch("/me/onboarding-complete", requireAuth, async (req: AuthRequest, res) => {

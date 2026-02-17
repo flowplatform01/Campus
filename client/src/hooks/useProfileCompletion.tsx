@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLocation } from 'wouter';
 
 interface OnboardingStep {
   id: string;
@@ -12,6 +13,7 @@ interface OnboardingStep {
 export function useProfileCompletion() {
   const { user, updateUser } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     // Never show if onboarding was completed and persisted in DB
@@ -21,7 +23,8 @@ export function useProfileCompletion() {
     }
     if (user && user.profileCompletion < 100) {
       // Check if user has dismissed onboarding recently (local fallback before DB persist)
-      const lastDismissed = localStorage.getItem('onboarding_dismissed');
+      const key = `onboarding_dismissed:${user.id}`;
+      const lastDismissed = localStorage.getItem(key);
       const now = Date.now();
       const oneWeek = 7 * 24 * 60 * 60 * 1000;
       if (!lastDismissed || (now - parseInt(lastDismissed, 10)) > oneWeek) {
@@ -37,7 +40,7 @@ export function useProfileCompletion() {
       description: 'Verify your email address',
       completed: user?.verified || false,
       action: async () => {
-        await updateUser({ verified: true, profileCompletion: Math.min(user!.profileCompletion + 20, 100) });
+        setLocation('/settings');
       }
     },
     {
@@ -46,7 +49,7 @@ export function useProfileCompletion() {
       description: 'Add your phone number for notifications',
       completed: !!user?.phone,
       action: async () => {
-        await updateUser({ phone: '+1234567890', profileCompletion: Math.min(user!.profileCompletion + 20, 100) });
+        setLocation('/profile');
       }
     },
     {
@@ -55,7 +58,7 @@ export function useProfileCompletion() {
       description: 'Connect to your school',
       completed: user?.schoolLinked || false,
       action: async () => {
-        await updateUser({ schoolLinked: true, profileCompletion: Math.min(user!.profileCompletion + 30, 100) });
+        setLocation('/settings');
       }
     },
     {
@@ -64,9 +67,7 @@ export function useProfileCompletion() {
       description: 'Upload a profile picture',
       completed: !!user?.avatar,
       action: async () => {
-        const avatars = ['👨‍🎓', '👩‍🎓', '👨‍🏫', '👩‍🏫', '👨‍💼', '👩‍💼'];
-        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
-        await updateUser({ avatar: randomAvatar, profileCompletion: Math.min(user!.profileCompletion + 30, 100) });
+        setLocation('/profile');
       }
     }
   ];

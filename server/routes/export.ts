@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth, AuthRequest } from "../middleware/auth.js";
+import { requireAuth, requireTenantAccess, AuthRequest } from "../middleware/auth.js";
 import { 
   generateStudentReport, 
   generateClassReport, 
@@ -12,17 +12,19 @@ import {
 const router = Router();
 
 // Export student academic report
-router.get("/student/:studentId/pdf", requireAuth, async (req: AuthRequest, res) => {
+router.get("/student/:studentId/pdf", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const { studentId } = req.params;
     if (!studentId) return res.status(400).json({ message: "Student ID is required" });
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
     const academicYearId = req.query.academicYearId as string | undefined;
     const termId = req.query.termId as string | undefined;
     if (!academicYearId || !termId) {
       return res.status(400).json({ message: "academicYearId and termId are required" });
     }
 
-    const reportData = await generateStudentReport(studentId, academicYearId, termId);
+    const reportData = await generateStudentReport(schoolId, studentId, academicYearId, termId);
     const pdfBuffer = await generatePDFReport(reportData, 'student');
     
     res.setHeader('Content-Type', 'application/pdf');
@@ -34,17 +36,19 @@ router.get("/student/:studentId/pdf", requireAuth, async (req: AuthRequest, res)
   }
 });
 
-router.get("/student/:studentId/excel", requireAuth, async (req: AuthRequest, res) => {
+router.get("/student/:studentId/excel", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const { studentId } = req.params;
     if (!studentId) return res.status(400).json({ message: "Student ID is required" });
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
     const academicYearId = req.query.academicYearId as string | undefined;
     const termId = req.query.termId as string | undefined;
     if (!academicYearId || !termId) {
       return res.status(400).json({ message: "academicYearId and termId are required" });
     }
 
-    const reportData = await generateStudentReport(studentId, academicYearId, termId);
+    const reportData = await generateStudentReport(schoolId, studentId, academicYearId, termId);
     const excelBuffer = await generateExcelReport([reportData], 'student');
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -57,17 +61,19 @@ router.get("/student/:studentId/excel", requireAuth, async (req: AuthRequest, re
 });
 
 // Export class performance report
-router.get("/class/:classId/pdf", requireAuth, async (req: AuthRequest, res) => {
+router.get("/class/:classId/pdf", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const { classId } = req.params;
     if (!classId) return res.status(400).json({ message: "Class ID is required" });
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
     const academicYearId = req.query.academicYearId as string | undefined;
     const termId = req.query.termId as string | undefined;
     if (!academicYearId || !termId) {
       return res.status(400).json({ message: "academicYearId and termId are required" });
     }
 
-    const reportData = await generateClassReport(classId, academicYearId, termId);
+    const reportData = await generateClassReport(schoolId, classId, academicYearId, termId);
     const pdfBuffer = await generatePDFReport(reportData, 'class');
     
     res.setHeader('Content-Type', 'application/pdf');
@@ -79,17 +85,19 @@ router.get("/class/:classId/pdf", requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-router.get("/class/:classId/excel", requireAuth, async (req: AuthRequest, res) => {
+router.get("/class/:classId/excel", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const { classId } = req.params;
     if (!classId) return res.status(400).json({ message: "Class ID is required" });
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
     const academicYearId = req.query.academicYearId as string | undefined;
     const termId = req.query.termId as string | undefined;
     if (!academicYearId || !termId) {
       return res.status(400).json({ message: "academicYearId and termId are required" });
     }
 
-    const reportData = await generateClassReport(classId, academicYearId, termId);
+    const reportData = await generateClassReport(schoolId, classId, academicYearId, termId);
     const excelBuffer = await generateExcelReport(reportData.students, 'class_performance');
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -102,7 +110,7 @@ router.get("/class/:classId/excel", requireAuth, async (req: AuthRequest, res) =
 });
 
 // Export attendance report
-router.get("/attendance/pdf", requireAuth, async (req: AuthRequest, res) => {
+router.get("/attendance/pdf", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const classId = req.query.classId as string | undefined;
     const academicYearId = req.query.academicYearId as string | undefined;
@@ -111,7 +119,9 @@ router.get("/attendance/pdf", requireAuth, async (req: AuthRequest, res) => {
       return res.status(400).json({ message: "classId, academicYearId, and termId are required" });
     }
 
-    const reportData = await generateAttendanceReport(classId, academicYearId, termId);
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
+    const reportData = await generateAttendanceReport(schoolId, classId, academicYearId, termId);
     const pdfBuffer = await generatePDFReport(reportData, 'attendance');
     
     res.setHeader('Content-Type', 'application/pdf');
@@ -123,7 +133,7 @@ router.get("/attendance/pdf", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/attendance/excel", requireAuth, async (req: AuthRequest, res) => {
+router.get("/attendance/excel", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const classId = req.query.classId as string | undefined;
     const academicYearId = req.query.academicYearId as string | undefined;
@@ -132,7 +142,9 @@ router.get("/attendance/excel", requireAuth, async (req: AuthRequest, res) => {
       return res.status(400).json({ message: "classId, academicYearId, and termId are required" });
     }
 
-    const reportData = await generateAttendanceReport(classId, academicYearId, termId);
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
+    const reportData = await generateAttendanceReport(schoolId, classId, academicYearId, termId);
     const excelBuffer = await generateExcelReport(reportData.records, 'attendance');
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -145,7 +157,7 @@ router.get("/attendance/excel", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Export assignments data
-router.get("/assignments/csv", requireAuth, async (req: AuthRequest, res) => {
+router.get("/assignments/csv", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const { classId, academicYearId, termId } = req.query;
     const user = req.user!;

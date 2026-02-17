@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,18 +9,105 @@ import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Mail, Lock } from 'lucide-react';
 
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const { toast } = useToast();
   const [location, setLocation] = useLocation();
   const params = new URLSearchParams(location.split('?')[1]);
   const role = params.get('role');
 
+  const googleClientId = useMemo(() => (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string | undefined, []);
+  const googleDivRef = useRef<HTMLDivElement | null>(null);
+  const [gisReady, setGisReady] = useState(false);
+
+  useEffect(() => {
+    if (!googleClientId) return;
+    if (window.google?.accounts?.id) {
+      setGisReady(true);
+      return;
+    }
+    const existing = document.querySelector('script[data-google-identity]');
+    if (existing) {
+      const startedAt = Date.now();
+      const t = window.setInterval(() => {
+        if (window.google?.accounts?.id) {
+          setGisReady(true);
+          window.clearInterval(t);
+        } else if (Date.now() - startedAt > 8000) {
+          window.clearInterval(t);
+        }
+      }, 200);
+      return () => window.clearInterval(t);
+    }
+
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.setAttribute('data-google-identity', '1');
+    s.onload = () => setGisReady(true);
+    s.onerror = () => {
+      toast({ title: 'Google login unavailable', description: 'Failed to load Google script', variant: 'destructive' });
+    };
+    document.body.appendChild(s);
+  }, [googleClientId, toast]);
+
+  useEffect(() => {
+    if (!googleClientId) return;
+    if (!googleDivRef.current) return;
+    if (!gisReady) return;
+    if (!window.google?.accounts?.id) return;
+
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: async (resp: any) => {
+        const credential = resp?.credential;
+        if (!credential) {
+          toast({ title: 'Google login failed', description: 'No credential returned', variant: 'destructive' });
+          return;
+        }
+        try {
+          const result = await loginWithGoogle(String(credential));
+          if (result.status === 'needs_role_selection') {
+            sessionStorage.setItem('pending_google_id_token', String(credential));
+            sessionStorage.setItem('pending_google_profile', JSON.stringify(result.profile));
+            setLocation('/role-selection?source=google');
+            return;
+          }
+          toast({ title: 'Welcome back!', description: 'Successfully logged in' });
+        } catch (e: any) {
+          toast({ title: 'Google login failed', description: e?.message || 'Error', variant: 'destructive' });
+        }
+      },
+    });
+
+    googleDivRef.current.innerHTML = '';
+    window.google.accounts.id.renderButton(googleDivRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: 360,
+    });
+  }, [gisReady, googleClientId, loginWithGoogle, toast]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!navigator.onLine) {
+      toast({
+        title: 'No internet connection',
+        description: 'Please check your network and try again',
+        variant: 'destructive'
+      });
+      return;
+    }
     setLoading(true);
 
     try {
@@ -38,21 +125,15 @@ export default function Login() {
         });
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Login failed';
       toast({
-        title: 'Error',
-        description: 'Something went wrong',
+        title: 'Login failed',
+        description: msg,
         variant: 'destructive'
       });
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSocialLogin = (provider: string) => {
-    toast({
-      title: `${provider} Login`,
-      description: 'Social login would be handled here in production'
-    });
   };
 
   return (
@@ -100,16 +181,8 @@ export default function Login() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <Button variant="outline" onClick={() => handleSocialLogin('Google')}>
-                G
-              </Button>
-              <Button variant="outline" onClick={() => handleSocialLogin('Facebook')}>
-                F
-              </Button>
-              <Button variant="outline" onClick={() => handleSocialLogin('Apple')}>
-                A
-              </Button>
+            <div className="grid grid-cols-1 gap-3">
+              <div ref={googleDivRef} />
             </div>
 
             <div className="relative">
@@ -171,32 +244,6 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="mt-6 pt-6 border-t border-dashed">
-              <p className="text-xs text-muted-foreground mb-3 text-center uppercase tracking-wider font-semibold">Demo Accounts</p>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: "Admin", email: "admin@campus.demo", pass: "Campus@12345" },
-                  { label: "Teacher", email: "teacher@campus.demo", pass: "Campus@12345" },
-                  { label: "Student", email: "student@campus.demo", pass: "Campus@12345" },
-                  { label: "Parent", email: "parent@campus.demo", pass: "Campus@12345" },
-                ].map((creds) => (
-                  <Button 
-                    key={creds.label}
-                    variant="outline" 
-                    size="sm" 
-                    className="text-[10px] h-7 px-2"
-                    type="button"
-                    onClick={() => {
-                      setEmail(creds.email);
-                      setPassword(creds.pass);
-                    }}
-                  >
-                    {creds.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
             <div className="flex flex-col gap-3 mt-4">
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
@@ -215,6 +262,21 @@ export default function Login() {
                 onClick={() => setLocation('/role-selection')}
               >
                 Register Now
+              </Button>
+
+              <Button
+                type="button"
+                variant="link"
+                className="p-0 h-auto text-xs text-muted-foreground"
+                onClick={() => {
+                  window.open(
+                    'https://wa.me/237651632823?text=Hello%20I%20need%20support%20from%20App%20Academy',
+                    '_blank',
+                    'noopener,noreferrer'
+                  );
+                }}
+              >
+                Need Help? Contact Support
               </Button>
             </div>
 

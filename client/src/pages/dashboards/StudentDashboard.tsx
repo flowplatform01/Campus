@@ -15,7 +15,7 @@ import { useMemo } from 'react';
 
 type Grade = {
   id: string;
-  subject: string;
+  subject: any;
   term: string;
   score: number;
   maxScore: number;
@@ -31,6 +31,15 @@ type Assignment = {
 
 export default function StudentDashboard() {
   const { user } = useRequireAuth(['student']);
+
+  const getSubjectLabel = (subject: any): string => {
+    if (typeof subject === 'string') return subject;
+    if (subject && typeof subject === 'object') {
+      if (typeof subject.name === 'string') return subject.name;
+      if (typeof subject.code === 'string') return subject.code;
+    }
+    return 'Subject';
+  };
 
   const { data: smsDash } = useQuery({
     queryKey: ['sms-dashboard'],
@@ -212,7 +221,7 @@ export default function StudentDashboard() {
                 {grades.slice(0, 4).map((grade) => (
                   <div key={grade.id} className="flex items-center justify-between">
                     <div className="flex-1">
-                      <p className="font-medium">{grade.subject}</p>
+                      <p className="font-medium">{getSubjectLabel(grade.subject)}</p>
                       <p className="text-xs text-muted-foreground">{grade.term}</p>
                     </div>
                     <Badge variant={grade.score / grade.maxScore > 0.8 ? 'default' : 'secondary'}>

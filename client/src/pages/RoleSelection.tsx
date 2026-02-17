@@ -3,9 +3,30 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { GraduationCap, Users, BookOpen, Shield } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 export default function RoleSelection() {
   const [, setLocation] = useLocation();
+  const { loginWithGoogle } = useAuth();
+  const { toast } = useToast();
+
+  const pendingIdToken = sessionStorage.getItem('pending_google_id_token');
+
+  const completeGoogle = async (role: 'admin' | 'student' | 'parent' | 'employee') => {
+    if (!pendingIdToken) return;
+    try {
+      const result = await loginWithGoogle(pendingIdToken, role as any);
+      if (result.status === 'logged_in') {
+        sessionStorage.removeItem('pending_google_id_token');
+        sessionStorage.removeItem('pending_google_profile');
+        toast({ title: 'Welcome!', description: 'Account created and signed in' });
+        setLocation('/');
+      }
+    } catch (e: any) {
+      toast({ title: 'Google signup failed', description: e?.message || 'Error', variant: 'destructive' });
+    }
+  };
 
   const roles = [
     {
@@ -77,11 +98,17 @@ export default function RoleSelection() {
                   <CardContent>
                     <div className="flex gap-3">
                       <Button
-                        onClick={() => setLocation(`/register?role=${role.id}`)}
+                        onClick={() => {
+                          if (pendingIdToken) {
+                            completeGoogle(role.id as any);
+                            return;
+                          }
+                          setLocation(`/register?role=${role.id}`);
+                        }}
                         className="flex-1"
                         variant="default"
                       >
-                        Sign Up
+                        {pendingIdToken ? 'Continue with Google' : 'Sign Up'}
                       </Button>
                       <Button
                         onClick={() => setLocation(`/login?role=${role.id}`)}

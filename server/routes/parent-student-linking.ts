@@ -80,24 +80,32 @@ router.get("/parent-linking-dashboard", requireAuth, requireTenantAccess, async 
       .leftJoin(users, eq(users.id, parentChildren.parentId))
       .leftJoin(users, eq(users.id, parentChildren.childId))
       .orderBy(parentChildren.createdAt);
+
+    const allowedParentIds = new Set(parents.map((p) => p.id));
+    const allowedStudentIds = new Set(students.map((s) => s.id));
+    const tenantLinks = links.filter((l: any) => {
+      const parentId = l.parent?.id;
+      const childId = l.student?.id;
+      return !!parentId && !!childId && allowedParentIds.has(parentId) && allowedStudentIds.has(childId);
+    });
     
     // 📈 CALCULATE STATISTICS
-    const linkedStudents = new Set(links.map(l => l.student?.id)).size;
-    const linkedParents = new Set(links.map(l => l.parent?.id)).size;
+    const linkedStudents = new Set(tenantLinks.map((l: any) => l.student?.id)).size;
+    const linkedParents = new Set(tenantLinks.map((l: any) => l.parent?.id)).size;
     const unlinkedStudents = students.length - linkedStudents;
     
     // 🔍 FIND UNLINKED STUDENTS
-    const unlinkedStudentDetails = students.filter(s => 
-      !links.some(l => l.student?.id === s.id)
+    const unlinkedStudentDetails = students.filter((s: any) =>
+      !tenantLinks.some((l: any) => l.student?.id === s.id)
     );
     
     // 🔍 FIND UNLINKED PARENTS
-    const unlinkedParentDetails = parents.filter(p => 
-      !links.some(l => l.parent?.id === p.id)
+    const unlinkedParentDetails = parents.filter((p: any) =>
+      !tenantLinks.some((l: any) => l.parent?.id === p.id)
     );
     
     // 👨‍👩‍👧‍👦 MULTI-PARENT SUPPORT ANALYSIS
-    const multiParentStudents = links.reduce((acc, link) => {
+    const multiParentStudents = tenantLinks.reduce((acc: any, link: any) => {
       if (link.student?.id) {
         acc[link.student.id] = (acc[link.student.id] || 0) + 1;
       }
@@ -105,7 +113,7 @@ router.get("/parent-linking-dashboard", requireAuth, requireTenantAccess, async 
     }, {} as Record<string, number>);
     
     const studentsWithMultipleParents = Object.entries(multiParentStudents)
-      .filter(([_, count]) => count > 1)
+      .filter(([_, count]) => Number(count) > 1)
       .length;
     
     res.json({
@@ -119,13 +127,13 @@ router.get("/parent-linking-dashboard", requireAuth, requireTenantAccess, async 
       },
       parents,
       students,
-      links,
+      links: tenantLinks,
       unlinkedStudents: unlinkedStudentDetails,
       unlinkedParents: unlinkedParentDetails,
       multiParentAnalysis: {
         studentsWithMultipleParents,
         breakdown: Object.entries(multiParentStudents)
-          .filter(([_, count]) => count > 1)
+          .filter(([_, count]) => Number(count) > 1)
           .map(([studentId, count]) => ({
             studentId,
             count,

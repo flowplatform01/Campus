@@ -14,9 +14,12 @@ export function OnboardingModal() {
     setShowOnboarding(false);
     try {
       await api.auth.completeOnboarding();
-      updateUser({ onboardingCompletedAt: new Date().toISOString() });
+      await updateUser({ onboardingCompletedAt: new Date().toISOString() });
     } catch {
-      localStorage.setItem('onboarding_dismissed', Date.now().toString());
+      const raw = localStorage.getItem('campus_user');
+      const id = raw ? (JSON.parse(raw)?.id as string | undefined) : undefined;
+      const key = id ? `onboarding_dismissed:${id}` : 'onboarding_dismissed';
+      localStorage.setItem(key, Date.now().toString());
     }
   };
 

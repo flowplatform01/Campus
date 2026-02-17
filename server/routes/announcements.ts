@@ -111,7 +111,7 @@ const createAnnouncementSchema = z.object({
   audienceId: z.string().optional(),
 });
 
-router.post("/", requireAuth, async (req: AuthRequest, res) => {
+router.post("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     if (req.user!.role !== "admin" && req.user!.role !== "employee") {
       return res.status(403).json({ message: "Not allowed" });

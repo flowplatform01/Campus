@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Edit, ListChecks, Database, Users } from 'lucide-react';
+import { Plus, Edit, ListChecks, Database, Users, Download, Printer } from 'lucide-react';
 import { queryClient } from '@/lib/queryClient';
 
 export default function CampusExamsPage() {
@@ -99,6 +99,77 @@ export default function CampusExamsPage() {
   }, [marks, marksEntry.subjectId]);
 
   const [draftMarks, setDraftMarks] = useState<Record<string, { marksObtained: string; remarks: string }>>({});
+
+  const examSummary = useMemo(() => {
+    const list = (marks || []) as any[];
+    const scored = list.filter((m) => typeof m?.marksObtained === 'number' && typeof m?.totalMarks === 'number' && m.totalMarks > 0);
+    const overall = {
+      count: scored.length,
+      averagePct: 0,
+      minPct: 0,
+      maxPct: 0,
+    };
+    if (scored.length > 0) {
+      const pcts = scored
+        .map((m) => (Number(m.marksObtained) / Number(m.totalMarks)) * 100)
+        .filter((v) => Number.isFinite(v));
+      const sum = pcts.reduce((a, b) => a + b, 0);
+      overall.averagePct = sum / Math.max(pcts.length, 1);
+      overall.minPct = Math.min(...pcts);
+      overall.maxPct = Math.max(...pcts);
+    }
+
+    const bySubject = new Map<string, { subjectId: string; subjectName: string; count: number; averagePct: number }>();
+    for (const m of scored) {
+      const subjectId = String(m.subjectId || '');
+      if (!subjectId) continue;
+      const subjectName = String(m?.subject?.name || m.subjectId);
+      const pct = (Number(m.marksObtained) / Number(m.totalMarks)) * 100;
+      const existing = bySubject.get(subjectId) || { subjectId, subjectName, count: 0, averagePct: 0 };
+      const nextCount = existing.count + 1;
+      const nextAvg = (existing.averagePct * existing.count + pct) / nextCount;
+      bySubject.set(subjectId, { ...existing, count: nextCount, averagePct: nextAvg });
+    }
+
+    return {
+      overall,
+      subjects: Array.from(bySubject.values()).sort((a, b) => a.subjectName.localeCompare(b.subjectName)),
+    };
+  }, [marks]);
+
+  const exportMarksCsv = () => {
+    if (!selectedExamForMarks?.id) return;
+    const list = (marks || []) as any[];
+    const rows = list.map((m) => {
+      const studentName = String(m?.student?.name || '');
+      const studentRef = String(m?.student?.studentId || m?.studentId || '');
+      const subjectName = String(m?.subject?.name || m?.subjectId || '');
+      const obtained = m?.marksObtained ?? '';
+      const total = m?.totalMarks ?? '';
+      const pct = typeof m?.marksObtained === 'number' && typeof m?.totalMarks === 'number' && m.totalMarks > 0
+        ? ((m.marksObtained / m.totalMarks) * 100).toFixed(2)
+        : '';
+      const remarks = String(m?.remarks || '');
+      return [studentName, studentRef, subjectName, String(obtained), String(total), String(pct), remarks];
+    });
+
+    const header = ['Student Name', 'Student ID', 'Subject', 'Marks Obtained', 'Total Marks', 'Percent', 'Remarks'];
+    const escapeCell = (v: string) => {
+      const s = String(v ?? '');
+      if (/[\n\r",]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const csv = [header, ...rows].map((r) => r.map(escapeCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `exam-marks-${selectedExamForMarks.id}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const saveMarks = useMutation({
     mutationFn: async () => {
@@ -346,9 +417,84 @@ export default function CampusExamsPage() {
                 <CardTitle>Marks: {selectedExamForMarks.name}</CardTitle>
                 <CardDescription>View and manage marks for this exam</CardDescription>
               </div>
-              <Button variant="ghost" onClick={() => setSelectedExamForMarks(null)}>Close</Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => window.print()}>
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print
+                </Button>
+                <Button variant="outline" size="sm" onClick={exportMarksCsv} disabled={(marks || []).length === 0}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+                <Button variant="ghost" onClick={() => setSelectedExamForMarks(null)}>Close</Button>
+              </div>
             </CardHeader>
             <CardContent>
+              <div className="grid gap-4 md:grid-cols-3 mb-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Overall Average</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {examSummary.overall.count > 0 ? `${examSummary.overall.averagePct.toFixed(1)}%` : '—'}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{examSummary.overall.count} scored entries</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Highest / Lowest</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {examSummary.overall.count > 0
+                        ? `${examSummary.overall.maxPct.toFixed(1)}% / ${examSummary.overall.minPct.toFixed(1)}%`
+                        : '—'}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Across all recorded marks</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Subjects Graded</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{examSummary.subjects.length}</div>
+                    <div className="text-xs text-muted-foreground">With at least 1 score</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {examSummary.subjects.length > 0 && (
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>Subject Analytics</CardTitle>
+                    <CardDescription>Average percentage per subject</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Subject</TableHead>
+                          <TableHead className="text-right">Entries</TableHead>
+                          <TableHead className="text-right">Average</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {examSummary.subjects.map((s) => (
+                          <TableRow key={s.subjectId}>
+                            <TableCell className="font-medium">{s.subjectName}</TableCell>
+                            <TableCell className="text-right">{s.count}</TableCell>
+                            <TableCell className="text-right">{s.averagePct.toFixed(1)}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              )}
+
               {isStaff && (
                 <div className="space-y-4 mb-6">
                   <div className="grid gap-4 md:grid-cols-4">

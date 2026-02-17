@@ -19,6 +19,8 @@ export default function Profile() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(user?.avatar || null);
+  const [name, setName] = useState(user?.name || '');
+  const [phone, setPhone] = useState(user?.phone || '');
 
   const handleFileSelect = () => {
     fileInputRef.current?.click();
@@ -82,7 +84,12 @@ export default function Profile() {
       // Update preview with final URL
       if (result.url) {
         setPreviewUrl(result.url);
-        await updateUser({ avatar: result.url });
+        try {
+          await updateUser({ avatar: result.url });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Failed to persist profile photo';
+          toast({ title: 'Upload failed', description: msg, variant: 'destructive' });
+        }
       }
     } catch (error) {
       toast({
@@ -140,7 +147,7 @@ export default function Profile() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
-                <Input id="name" defaultValue={user?.name} />
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -148,7 +155,7 @@ export default function Profile() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" defaultValue={user?.phone} />
+                <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
@@ -156,7 +163,19 @@ export default function Profile() {
               </div>
             </div>
 
-            <Button>Save Changes</Button>
+            <Button
+              onClick={async () => {
+                try {
+                  await updateUser({ name, phone });
+                  toast({ title: 'Profile Updated', description: 'Your profile has been saved successfully' });
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : 'Failed to save profile';
+                  toast({ title: 'Profile update failed', description: msg, variant: 'destructive' });
+                }
+              }}
+            >
+              Save Changes
+            </Button>
           </CardContent>
         </Card>
       </div>

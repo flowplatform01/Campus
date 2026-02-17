@@ -262,13 +262,13 @@ export default function CampusPaymentsPage() {
                     </div>
 
                     <div className="grid gap-2">
-                      <Label>Fee Head (optional)</Label>
+                      <Label>Fee Head</Label>
                       <select
                         value={invoiceForm.feeHeadId}
                         onChange={(e) => setInvoiceForm({ ...invoiceForm, feeHeadId: e.target.value })}
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       >
-                        <option value="">(none)</option>
+                        <option value="">Select fee head</option>
                         {(feeHeads || []).map((h: any) => (
                           <option key={h.id} value={h.id}>
                             {h.name}
@@ -297,6 +297,7 @@ export default function CampusPaymentsPage() {
                       disabled={
                         (!bulkAllInClass && !invoiceForm.studentId) ||
                         (bulkAllInClass && (rosterStudents || []).length === 0) ||
+                        !invoiceForm.feeHeadId ||
                         !invoiceForm.amount ||
                         createInvoice.isPending
                       }
@@ -322,7 +323,7 @@ export default function CampusPaymentsPage() {
                         <option value="">Select invoice</option>
                         {(invoices || []).map((inv: any) => (
                           <option key={inv.id} value={inv.id}>
-                            {inv.id.slice(0, 8)}… — {inv.status} — {inv.totalAmount}
+                            {(inv.displayName || inv.id.slice(0, 8) + '…')} — {inv.status} — {inv.totalAmount}
                           </option>
                         ))}
                       </select>
@@ -365,7 +366,7 @@ export default function CampusPaymentsPage() {
                   <TableBody>
                     {(invoices || []).map((inv: any) => (
                       <TableRow key={inv.id}>
-                        <TableCell className="font-medium">{inv.id.slice(0, 8)}…</TableCell>
+                        <TableCell className="font-medium">{inv.displayName || (inv.id.slice(0, 8) + '…')}</TableCell>
                         <TableCell>
                           <Badge variant={inv.status === 'paid' ? 'default' : 'secondary'}>{inv.status}</Badge>
                         </TableCell>

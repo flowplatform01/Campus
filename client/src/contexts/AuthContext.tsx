@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from '@/data-access/mockData';
-import { api, ApiUser } from '@/lib/api';
+import { api, ApiUser, GoogleAuthNeedsRoleSelection } from '@/lib/api';
 
 function apiUserToUser(u: ApiUser): User {
   return {
@@ -9,6 +9,7 @@ function apiUserToUser(u: ApiUser): User {
     name: u.name,
     role: u.role as UserRole,
     avatar: u.avatar,
+    phone: u.phone ?? undefined,
     profileCompletion: u.profileCompletion ?? 0,
     verified: u.verified ?? false,
     schoolLinked: u.schoolLinked ?? false,
@@ -21,6 +22,7 @@ function apiUserToUser(u: ApiUser): User {
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
+  loginWithGoogle: (idToken: string, role?: UserRole) => Promise<{ status: 'logged_in' } | { status: 'needs_role_selection'; profile: GoogleAuthNeedsRoleSelection['profile'] }>;
   register: (data: {
     email: string;
     password: string;
@@ -68,9 +70,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('campus_refresh_token', res.refreshToken);
       localStorage.setItem('campus_user', JSON.stringify(apiUserToUser(res.user)));
       return true;
-    } catch {
+    } catch (e) {
+      if (e instanceof Error) {
+        throw e;
+      }
       return false;
     }
+  };
+
+  const loginWithGoogle: AuthContextType['loginWithGoogle'] = async (idToken: string, role?: UserRole) => {
+    const res = await api.auth.googleLogin(idToken, role as any);
+    if ((res as any)?.needsRoleSelection) {
+      return { status: 'needs_role_selection', profile: (res as GoogleAuthNeedsRoleSelection).profile };
+    }
+    const ok = res as { user: ApiUser; accessToken: string; refreshToken: string };
+    setUser(apiUserToUser(ok.user));
+    localStorage.setItem('campus_access_token', ok.accessToken);
+    localStorage.setItem('campus_refresh_token', ok.refreshToken);
+    localStorage.setItem('campus_user', JSON.stringify(apiUserToUser(ok.user)));
+    return { status: 'logged_in' };
   };
 
   const register = async (data: {
@@ -105,10 +123,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updateUser = async (updates: Partial<User>) => {
-    if (user) {
-      setUser({ ...user, ...updates });
-      localStorage.setItem('campus_user', JSON.stringify({ ...user, ...updates }));
+    if (!user) return;
+
+    if (updates.onboardingCompletedAt) {
+      await api.auth.completeOnboarding();
+      const fresh = await api.auth.me();
+      const next = apiUserToUser(fresh);
+      setUser(next);
+      localStorage.setItem('campus_user', JSON.stringify(next));
+      return;
     }
+
+    const payload: Partial<{ name: string; phone: string; avatarUrl: string }> = {};
+    if (typeof updates.name === 'string') payload.name = updates.name;
+    if (typeof updates.phone === 'string') payload.phone = updates.phone;
+    if (typeof updates.avatar === 'string') payload.avatarUrl = updates.avatar;
+
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
+    const updated = await api.auth.updateMe(payload);
+    const next = apiUserToUser(updated);
+    setUser(next);
+    localStorage.setItem('campus_user', JSON.stringify(next));
   };
 
   if (loading) {
@@ -120,6 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         login,
+        loginWithGoogle,
         register,
         logout,
         updateUser,

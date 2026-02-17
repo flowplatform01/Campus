@@ -178,7 +178,7 @@ const academicYearCreateSchema = z.object({
 
 const academicYearUpdateSchema = academicYearCreateSchema.partial();
 
-router.get("/academic-years", requireAuth, async (req: AuthRequest, res) => {
+router.get("/academic-years", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireStaff(req, res);
   if (!schoolId) return;
   const rows = await db.select().from(academicYears).where(eq(academicYears.schoolId, schoolId));
@@ -212,7 +212,7 @@ const schoolUpdateSchema = z.object({
   email: z.string().email().optional(),
 });
 
-router.patch("/school", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/school", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const body = schoolUpdateSchema.parse(req.body);
@@ -237,7 +237,7 @@ const attendanceSessionCreateSchema = z.object({
   date: z.string().datetime(),
 });
 
-router.get("/attendance/roster", requireAuth, async (req: AuthRequest, res) => {
+router.get("/attendance/roster", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.role !== "employee") {
     return res.status(403).json({ message: "Forbidden" });
@@ -277,7 +277,7 @@ router.get("/attendance/roster", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows);
 });
 
-router.post("/attendance/sessions", requireAuth, async (req: AuthRequest, res) => {
+router.post("/attendance/sessions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     if (user.role !== "admin" && user.role !== "employee") {
@@ -356,7 +356,7 @@ const attendanceEntriesUpsertSchema = z.object({
   ),
 });
 
-router.post("/attendance/sessions/:id/entries", requireAuth, async (req: AuthRequest, res) => {
+router.post("/attendance/sessions/:id/entries", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     if (user.role !== "admin" && user.role !== "employee") {
@@ -443,7 +443,7 @@ router.post("/attendance/sessions/:id/entries", requireAuth, async (req: AuthReq
   }
 });
 
-router.post("/attendance/sessions/:id/submit", requireAuth, async (req: AuthRequest, res) => {
+router.post("/attendance/sessions/:id/submit", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.role !== "employee") {
     return res.status(403).json({ message: "Forbidden" });
@@ -481,7 +481,7 @@ router.post("/attendance/sessions/:id/submit", requireAuth, async (req: AuthRequ
   return res.json(row);
 });
 
-router.post("/attendance/sessions/:id/lock", requireAuth, async (req: AuthRequest, res) => {
+router.post("/attendance/sessions/:id/lock", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
 
@@ -518,7 +518,7 @@ router.post("/attendance/sessions/:id/lock", requireAuth, async (req: AuthReques
 // ============ Enhanced Attendance System ============
 
 // Get attendance sessions for a class
-router.get("/attendance/sessions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/attendance/sessions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
@@ -584,7 +584,7 @@ router.get("/attendance/sessions", requireAuth, async (req: AuthRequest, res) =>
 });
 
 // Get attendance entries for a specific session
-router.get("/attendance/sessions/:id/entries", requireAuth, async (req: AuthRequest, res) => {
+router.get("/attendance/sessions/:id/entries", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     if (user.role !== "admin" && user.role !== "employee") {
@@ -634,7 +634,7 @@ router.get("/attendance/sessions/:id/entries", requireAuth, async (req: AuthRequ
 
 // ============ Reports & Resources ============
 
-router.get("/reports/summary", requireAuth, async (req: AuthRequest, res) => {
+router.get("/reports/summary", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -721,7 +721,7 @@ router.get("/reports/summary", requireAuth, async (req: AuthRequest, res) => {
   });
 });
 
-router.get("/resources", requireAuth, async (req: AuthRequest, res) => {
+router.get("/resources", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -745,7 +745,7 @@ const resourceCreateSchema = z.object({
   subjectId: z.string().optional().or(z.literal("")),
 });
 
-router.post("/resources", requireAuth, async (req: AuthRequest, res) => {
+router.post("/resources", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
@@ -784,7 +784,7 @@ router.post("/resources", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/resources/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/resources/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -803,7 +803,7 @@ router.delete("/resources/:id", requireAuth, async (req: AuthRequest, res) => {
 
 // ============ Payments (Foundation) ============
 
-router.get("/payments/fee-heads", requireAuth, async (req: AuthRequest, res) => {
+router.get("/payments/fee-heads", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -817,7 +817,7 @@ const feeHeadCreateSchema = z.object({
   code: z.string().optional(),
 });
 
-router.post("/payments/fee-heads", requireAuth, async (req: AuthRequest, res) => {
+router.post("/payments/fee-heads", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
@@ -839,7 +839,7 @@ router.post("/payments/fee-heads", requireAuth, async (req: AuthRequest, res) =>
   }
 });
 
-router.get("/payments/settings", requireAuth, async (req: AuthRequest, res) => {
+router.get("/payments/settings", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
 
@@ -854,7 +854,7 @@ const paymentSettingsUpdateSchema = z.object({
   methods: z.array(z.string().min(1)).optional(),
 });
 
-router.patch("/payments/settings", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/payments/settings", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -884,7 +884,7 @@ router.patch("/payments/settings", requireAuth, async (req: AuthRequest, res) =>
   }
 });
 
-router.get("/payments/invoices", requireAuth, async (req: AuthRequest, res) => {
+router.get("/payments/invoices", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -908,7 +908,26 @@ router.get("/payments/invoices", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const rows = await db
-    .select()
+    .select({
+      id: smsInvoices.id,
+      schoolId: smsInvoices.schoolId,
+      academicYearId: smsInvoices.academicYearId,
+      termId: smsInvoices.termId,
+      studentId: smsInvoices.studentId,
+      status: smsInvoices.status,
+      issuedAt: smsInvoices.issuedAt,
+      dueAt: smsInvoices.dueAt,
+      notes: smsInvoices.notes,
+      subtotalAmount: smsInvoices.subtotalAmount,
+      totalAmount: smsInvoices.totalAmount,
+      createdBy: smsInvoices.createdBy,
+      createdAt: smsInvoices.createdAt,
+      displayName: sql<string>`coalesce(
+        (select fh.name from sms_invoice_lines l left join sms_fee_heads fh on fh.id = l.fee_head_id where l.invoice_id = ${smsInvoices.id} limit 1),
+        (select l.description from sms_invoice_lines l where l.invoice_id = ${smsInvoices.id} limit 1),
+        ${smsInvoices.id}
+      )`,
+    })
     .from(smsInvoices)
     .where(and(...whereParts))
     .orderBy(desc(smsInvoices.issuedAt))
@@ -916,7 +935,7 @@ router.get("/payments/invoices", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows);
 });
 
-router.get("/payments/invoices/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/payments/invoices/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -953,7 +972,7 @@ const invoiceCreateSchema = z.object({
   notes: z.string().optional(),
   lines: z.array(
     z.object({
-      feeHeadId: z.string().optional().or(z.literal("")),
+      feeHeadId: z.string().min(1),
       description: z.string().min(1),
       amount: z.number().int().positive(),
     })
@@ -986,7 +1005,7 @@ async function recomputeInvoiceTotals(schoolId: string, invoiceId: string) {
   return row;
 }
 
-router.post("/payments/invoices", requireAuth, async (req: AuthRequest, res) => {
+router.post("/payments/invoices", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
@@ -1035,7 +1054,7 @@ router.post("/payments/invoices", requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-router.post("/payments/invoices/bulk", requireAuth, async (req: AuthRequest, res) => {
+router.post("/payments/invoices/bulk", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
@@ -1109,7 +1128,7 @@ const paymentCreateSchema = z.object({
   paidAt: z.string().datetime().optional(),
 });
 
-router.post("/payments/payments", requireAuth, async (req: AuthRequest, res) => {
+router.post("/payments/payments", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
@@ -1149,7 +1168,7 @@ router.post("/payments/payments", requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-router.get("/payments/students/:id/balance", requireAuth, async (req: AuthRequest, res) => {
+router.get("/payments/students/:id/balance", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -1202,7 +1221,7 @@ const assignmentCreateSchema = z.object({
   attachmentUrl: z.string().optional(),
 });
 
-router.get("/assignments", requireAuth, async (req: AuthRequest, res) => {
+router.get("/assignments", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -1283,7 +1302,7 @@ router.get("/assignments", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows.map((a: any) => ({ ...a, submitted: submittedSet.has(a.id) })));
 });
 
-router.post("/assignments", requireAuth, async (req: AuthRequest, res) => {
+router.post("/assignments", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     if (user.role !== "admin" && user.role !== "employee") {
@@ -1324,7 +1343,7 @@ router.post("/assignments", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/assignments/:id/publish", requireAuth, async (req: AuthRequest, res) => {
+router.post("/assignments/:id/publish", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.role !== "employee") {
     return res.status(403).json({ message: "Forbidden" });
@@ -1344,7 +1363,7 @@ router.post("/assignments/:id/publish", requireAuth, async (req: AuthRequest, re
   return res.json(row);
 });
 
-router.post("/assignments/:id/close", requireAuth, async (req: AuthRequest, res) => {
+router.post("/assignments/:id/close", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.role !== "employee") {
     return res.status(403).json({ message: "Forbidden" });
@@ -1369,7 +1388,7 @@ const assignmentSubmitSchema = z.object({
   submissionText: z.string().optional(),
 });
 
-router.post("/assignments/:id/submit", requireAuth, async (req: AuthRequest, res) => {
+router.post("/assignments/:id/submit", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     if (user.role !== "student") return res.status(403).json({ message: "Only students can submit" });
@@ -1427,7 +1446,7 @@ const assignmentReviewSchema = z.object({
   feedback: z.string().optional(),
 });
 
-router.post("/assignments/submissions/:id/review", requireAuth, async (req: AuthRequest, res) => {
+router.post("/assignments/submissions/:id/review", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     if (user.role !== "admin" && user.role !== "employee") {
@@ -1461,7 +1480,7 @@ router.post("/assignments/submissions/:id/review", requireAuth, async (req: Auth
   }
 });
 
-router.get("/assignments/:id/submissions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/assignments/:id/submissions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.role !== "employee") {
     return res.status(403).json({ message: "Forbidden" });
@@ -1549,7 +1568,7 @@ const timetableSlotSchema = z.object({
   room: z.string().optional(),
 });
 
-router.get("/timetable/week", requireAuth, async (req: AuthRequest, res) => {
+router.get("/timetable/week", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
@@ -1635,7 +1654,7 @@ router.get("/timetable/week", requireAuth, async (req: AuthRequest, res) => {
   return res.json({ academicYearId: activeYear.id, slots: rows });
 });
 
-router.post("/timetable/slots", requireAuth, async (req: AuthRequest, res) => {
+router.post("/timetable/slots", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -1722,7 +1741,7 @@ router.post("/timetable/slots", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/timetable/slots/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/timetable/slots/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -1763,7 +1782,7 @@ const timetablePublishSchema = z.object({
   sectionId: z.string().optional(),
 });
 
-router.post("/timetable/publish", requireAuth, async (req: AuthRequest, res) => {
+router.post("/timetable/publish", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -1828,7 +1847,7 @@ router.post("/timetable/publish", requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-router.post("/academic-years", requireAuth, async (req: AuthRequest, res) => {
+router.post("/academic-years", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -1875,7 +1894,7 @@ router.post("/academic-years", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/academic-years/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/academic-years/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -1917,7 +1936,7 @@ router.patch("/academic-years/:id", requireAuth, async (req: AuthRequest, res) =
   }
 });
 
-router.delete("/academic-years/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/academic-years/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
 
@@ -1945,10 +1964,14 @@ router.delete("/academic-years/:id", requireAuth, async (req: AuthRequest, res) 
 
 // ============ Dashboard (Role-aware, real metrics) ============
 
-router.get("/dashboard", requireAuth, async (req: AuthRequest, res) => {
+router.get("/dashboard", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   const schoolId = user.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+
+  if (!validateTenantAccess(schoolId, user.schoolId!)) {
+    return res.status(403).json({ message: "Cross-tenant access denied" });
+  }
 
   const [activeYear] = await db
     .select()
@@ -2070,7 +2093,7 @@ const termCreateSchema = z.object({
   endDate: z.string().datetime(),
 });
 
-router.get("/terms", requireAuth, async (req: AuthRequest, res) => {
+router.get("/terms", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const academicYearId = req.query.academicYearId as string | undefined;
@@ -2082,7 +2105,7 @@ router.get("/terms", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows);
 });
 
-router.post("/terms", requireAuth, async (req: AuthRequest, res) => {
+router.post("/terms", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2125,7 +2148,7 @@ router.post("/terms", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/terms/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/terms/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
 
@@ -2146,7 +2169,7 @@ const classCreateSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
-router.get("/classes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/classes", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = req.user!.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
   if (req.user!.role !== "admin" && req.user!.role !== "employee") {
@@ -2156,7 +2179,7 @@ router.get("/classes", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows);
 });
 
-router.post("/classes", requireAuth, async (req: AuthRequest, res) => {
+router.post("/classes", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2181,7 +2204,7 @@ router.post("/classes", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/classes/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/classes/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
 
@@ -2202,7 +2225,7 @@ const sectionCreateSchema = z.object({
   name: z.string().min(1),
 });
 
-router.get("/sections", requireAuth, async (req: AuthRequest, res) => {
+router.get("/sections", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const classId = req.query.classId as string | undefined;
@@ -2214,7 +2237,7 @@ router.get("/sections", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows);
 });
 
-router.post("/sections", requireAuth, async (req: AuthRequest, res) => {
+router.post("/sections", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2249,7 +2272,7 @@ router.post("/sections", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/sections/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/sections/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
 
@@ -2270,14 +2293,14 @@ const subjectCreateSchema = z.object({
   code: z.string().optional(),
 });
 
-router.get("/subjects", requireAuth, async (req: AuthRequest, res) => {
+router.get("/subjects", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireStaff(req, res);
   if (!schoolId) return;
   const rows = await db.select().from(subjects).where(eq(subjects.schoolId, schoolId));
   return res.json(rows);
 });
 
-router.post("/subjects", requireAuth, async (req: AuthRequest, res) => {
+router.post("/subjects", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2303,7 +2326,7 @@ router.post("/subjects", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/subjects/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/subjects/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
 
@@ -2326,7 +2349,7 @@ router.delete("/subjects/:id", requireAuth, async (req: AuthRequest, res) => {
 
 // ============ Permissions & Sub-Roles ============
 
-router.get("/permissions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/permissions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   await ensurePermissionCatalogSeeded();
@@ -2339,7 +2362,7 @@ const subRoleCreateSchema = z.object({
   name: z.string().min(1),
 });
 
-router.get("/sub-roles", requireAuth, async (req: AuthRequest, res) => {
+router.get("/sub-roles", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   
@@ -2351,7 +2374,7 @@ router.get("/sub-roles", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Public endpoint for user creation sub-role dropdown (admin only)
-router.get("/sub-roles/dropdown", requireAuth, async (req: AuthRequest, res) => {
+router.get("/sub-roles/dropdown", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   
@@ -2370,7 +2393,7 @@ router.get("/sub-roles/dropdown", requireAuth, async (req: AuthRequest, res) => 
   return res.json(rows);
 });
 
-router.post("/sub-roles", requireAuth, async (req: AuthRequest, res) => {
+router.post("/sub-roles", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2389,7 +2412,7 @@ router.post("/sub-roles", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/sub-roles/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/sub-roles/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const subRoleId = req.params.id;
@@ -2410,7 +2433,7 @@ const subRoleGrantSchema = z.object({
   permissionKeys: z.array(z.string().min(1)),
 });
 
-router.get("/sub-role-grants", requireAuth, async (req: AuthRequest, res) => {
+router.get("/sub-role-grants", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const subRoleId = req.query.subRoleId as string | undefined;
@@ -2423,7 +2446,7 @@ router.get("/sub-role-grants", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows);
 });
 
-router.put("/sub-role-grants", requireAuth, async (req: AuthRequest, res) => {
+router.put("/sub-role-grants", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2489,14 +2512,14 @@ const admissionCreateSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/admissions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/admissions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const rows = await db.select().from(admissions).where(eq(admissions.schoolId, schoolId));
   return res.json(rows);
 });
 
-router.post("/admissions", requireAuth, async (req: AuthRequest, res) => {
+router.post("/admissions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2556,7 +2579,7 @@ router.post("/admissions", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/admissions/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/admissions/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2590,7 +2613,7 @@ router.patch("/admissions/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/admissions/:id/approve", requireAuth, async (req: AuthRequest, res) => {
+router.post("/admissions/:id/approve", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2727,14 +2750,14 @@ const examCreateSchema = z.object({
   endDate: z.string().datetime().optional(),
 });
 
-router.get("/exams", requireAuth, async (req: AuthRequest, res) => {
+router.get("/exams", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = req.user!.schoolId;
   if (!schoolId) return res.status(400).json({ message: "No school linked" });
   const rows = await db.select().from(smsExams).where(eq(smsExams.schoolId, schoolId));
   return res.json(rows);
 });
 
-router.post("/exams", requireAuth, async (req: AuthRequest, res) => {
+router.post("/exams", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const body = examCreateSchema.parse(req.body);
@@ -2747,7 +2770,7 @@ router.post("/exams", requireAuth, async (req: AuthRequest, res) => {
   return res.status(201).json(row);
 });
 
-router.get("/exams/:id/marks", requireAuth, async (req: AuthRequest, res) => {
+router.get("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = req.user!.schoolId;
   if (!schoolId) return res.status(400).json({ message: "No school linked" });
   const examId = req.params.id;
@@ -2784,7 +2807,7 @@ router.get("/exams/:id/marks", requireAuth, async (req: AuthRequest, res) => {
   return res.json(rows);
 });
 
-router.post("/exams/:id/marks", requireAuth, async (req: AuthRequest, res) => {
+router.post("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Forbidden" });
   const examId = req.params.id;
@@ -2865,7 +2888,7 @@ router.post("/exams/:id/marks", requireAuth, async (req: AuthRequest, res) => {
   return res.json(results);
 });
 
-router.post("/subjects/seed-samples", requireAuth, async (req: AuthRequest, res) => {
+router.post("/subjects/seed-samples", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
     if (!schoolId) return;
@@ -2904,7 +2927,7 @@ router.post("/subjects/seed-samples", requireAuth, async (req: AuthRequest, res)
 // ============ Enhanced Exam Access Control System ============
 
 // Get exams with role-based access control
-router.get("/exams/enhanced", requireAuth, async (req: AuthRequest, res) => {
+router.get("/exams/enhanced", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -2957,7 +2980,7 @@ router.get("/exams/enhanced", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Get exam with detailed information and access control
-router.get("/exams/:examId/detailed", requireAuth, async (req: AuthRequest, res) => {
+router.get("/exams/:examId/detailed", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -3077,7 +3100,7 @@ router.get("/exams/:examId/detailed", requireAuth, async (req: AuthRequest, res)
 });
 
 // Create exam with enhanced validation
-router.post("/exams/enhanced", requireAuth, async (req: AuthRequest, res) => {
+router.post("/exams/enhanced", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = requireAdmin(req, res);
@@ -3169,7 +3192,7 @@ router.post("/exams/enhanced", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Get student's exam results and scores
-router.get("/exams/student/:studentId/results", requireAuth, async (req: AuthRequest, res) => {
+router.get("/exams/student/:studentId/results", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -3299,14 +3322,14 @@ const expenseCreateSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/expenses", requireAuth, async (req: AuthRequest, res) => {
+router.get("/expenses", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = req.user!.schoolId;
   if (!schoolId) return res.status(400).json({ message: "No school linked" });
   const rows = await db.select().from(smsExpenses).where(eq(smsExpenses.schoolId, schoolId)).orderBy(desc(smsExpenses.date));
   return res.json(rows);
 });
 
-router.post("/expenses", requireAuth, async (req: AuthRequest, res) => {
+router.post("/expenses", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const body = expenseCreateSchema.parse(req.body);
@@ -3329,7 +3352,7 @@ const promoteStudentsSchema = z.object({
   studentIds: z.array(z.string().min(1)),
 });
 
-router.post("/students/promote", requireAuth, async (req: AuthRequest, res) => {
+router.post("/students/promote", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const body = promoteStudentsSchema.parse(req.body);
@@ -3362,7 +3385,7 @@ router.post("/students/promote", requireAuth, async (req: AuthRequest, res) => {
 
 // ============ Student Enrollments ============
 
-router.post("/bulk-enrollments", requireAuth, async (req: AuthRequest, res) => {
+router.post("/bulk-enrollments", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = req.user!.schoolId ?? null;
   if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
   if (req.user!.role !== "admin") {
@@ -3402,14 +3425,14 @@ router.post("/bulk-enrollments", requireAuth, async (req: AuthRequest, res) => {
 
 // ============ Staff Attendance ============
 
-router.get("/staff-attendance/sessions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/staff-attendance/sessions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const rows = await db.select().from(smsStaffAttendanceSessions).where(eq(smsStaffAttendanceSessions.schoolId, schoolId)).orderBy(desc(smsStaffAttendanceSessions.date));
   return res.json(rows);
 });
 
-router.post("/staff-attendance/sessions", requireAuth, async (req: AuthRequest, res) => {
+router.post("/staff-attendance/sessions", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const body = z.object({ date: z.string().datetime() }).parse(req.body);
@@ -3423,7 +3446,7 @@ router.post("/staff-attendance/sessions", requireAuth, async (req: AuthRequest, 
   return res.status(201).json(row);
 });
 
-router.get("/staff-attendance/sessions/:id/entries", requireAuth, async (req: AuthRequest, res) => {
+router.get("/staff-attendance/sessions/:id/entries", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const sessionId = req.params.id;
@@ -3437,7 +3460,7 @@ router.get("/staff-attendance/sessions/:id/entries", requireAuth, async (req: Au
   return res.json(rows);
 });
 
-router.post("/staff-attendance/sessions/:id/entries", requireAuth, async (req: AuthRequest, res) => {
+router.post("/staff-attendance/sessions/:id/entries", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   const schoolId = requireAdmin(req, res);
   if (!schoolId) return;
   const body = z.array(z.object({
@@ -3740,7 +3763,7 @@ router.post("/schools/:schoolId/apply", async (req, res) => {
 });
 
 // Check application status
-router.get("/applications/:applicationId/status", async (req, res) => {
+router.get("/applications/:applicationId/status", requireAuth, async (req: AuthRequest, res) => {
   try {
     const applicationId = req.params.applicationId;
     if (!applicationId) {
@@ -3777,6 +3800,26 @@ router.get("/applications/:applicationId/status", async (req, res) => {
     
     if (!application) {
       return res.status(404).json({ message: "Application not found" });
+    }
+
+    const user = req.user!;
+    const userSchoolId = user.schoolId ?? null;
+    const appSchoolId = (application as any).school?.id ?? null;
+
+    const canStaffRead =
+      (user.role === "admin" || user.role === "employee") &&
+      !!userSchoolId &&
+      !!appSchoolId &&
+      userSchoolId === appSchoolId;
+
+    const userEmail = (user.email || "").toLowerCase();
+    const canApplicantRead =
+      userEmail.length > 0 &&
+      (userEmail === String((application as any).studentEmail || "").toLowerCase() ||
+        userEmail === String((application as any).parentEmail || "").toLowerCase());
+
+    if (!canStaffRead && !canApplicantRead) {
+      return res.status(403).json({ message: "Not authorized" });
     }
     
     return res.json({
@@ -4184,7 +4227,7 @@ router.get("/parent/applications", requireAuth, async (req: AuthRequest, res) =>
 // ============ Unified Enrollment Management Module ============
 
 // Get enrollment dashboard overview
-router.get("/enrollment/overview", requireAuth, async (req: AuthRequest, res) => {
+router.get("/enrollment/overview", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -4283,7 +4326,7 @@ router.get("/enrollment/overview", requireAuth, async (req: AuthRequest, res) =>
 });
 
 // Get student applications queue
-router.get("/enrollment/student-applications", requireAuth, async (req: AuthRequest, res) => {
+router.get("/enrollment/student-applications", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -4353,7 +4396,7 @@ router.get("/enrollment/student-applications", requireAuth, async (req: AuthRequ
 });
 
 // Get parent-submitted applications queue
-router.get("/enrollment/parent-applications", requireAuth, async (req: AuthRequest, res) => {
+router.get("/enrollment/parent-applications", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -4430,7 +4473,7 @@ router.get("/enrollment/parent-applications", requireAuth, async (req: AuthReque
 });
 
 // Get employee applications queue
-router.get("/enrollment/employee-applications", requireAuth, async (req: AuthRequest, res) => {
+router.get("/enrollment/employee-applications", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -4497,7 +4540,7 @@ router.get("/enrollment/employee-applications", requireAuth, async (req: AuthReq
 });
 
 // Get detailed application view
-router.get("/enrollment/applications/:applicationId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/enrollment/applications/:applicationId", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -4583,7 +4626,7 @@ router.get("/enrollment/applications/:applicationId", requireAuth, async (req: A
 });
 
 // Approve application
-router.post("/enrollment/applications/:applicationId/approve", requireAuth, async (req: AuthRequest, res) => {
+router.post("/enrollment/applications/:applicationId/approve", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -4706,7 +4749,7 @@ router.post("/enrollment/applications/:applicationId/approve", requireAuth, asyn
 });
 
 // Reject application
-router.post("/enrollment/applications/:applicationId/reject", requireAuth, async (req: AuthRequest, res) => {
+router.post("/enrollment/applications/:applicationId/reject", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId!;
@@ -4939,7 +4982,7 @@ router.get("/employee-applications", requireAuth, async (req: AuthRequest, res) 
 // ============ Student Achievements System ============
 
 // Get student achievements
-router.get("/achievements", requireAuth, async (req: AuthRequest, res) => {
+router.get("/achievements", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     
@@ -4977,7 +5020,7 @@ router.get("/achievements", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Award achievement to student
-router.post("/achievements/award", requireAuth, async (req: AuthRequest, res) => {
+router.post("/achievements/award", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     
@@ -5068,7 +5111,7 @@ router.post("/achievements/award", requireAuth, async (req: AuthRequest, res) =>
 });
 
 // Create new achievement
-router.post("/achievements", requireAuth, async (req: AuthRequest, res) => {
+router.post("/achievements", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     
@@ -5109,7 +5152,7 @@ router.post("/achievements", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Get available achievements (for awarding)
-router.get("/achievements/available", requireAuth, async (req: AuthRequest, res) => {
+router.get("/achievements/available", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     
@@ -5131,7 +5174,7 @@ router.get("/achievements/available", requireAuth, async (req: AuthRequest, res)
 });
 
 // Get student achievement statistics
-router.get("/achievements/stats/:studentId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/achievements/stats/:studentId", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     
@@ -5226,7 +5269,7 @@ router.get("/achievements/stats/:studentId", requireAuth, async (req: AuthReques
 // ============ Progressive Onboarding System ============
 
 // Get user's onboarding status
-router.get("/onboarding/status", requireAuth, async (req: AuthRequest, res) => {
+router.get("/onboarding/status", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     
@@ -5319,7 +5362,7 @@ router.get("/onboarding/status", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Update onboarding progress
-router.post("/onboarding/complete-step", requireAuth, async (req: AuthRequest, res) => {
+router.post("/onboarding/complete-step", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     
@@ -5428,7 +5471,7 @@ router.post("/onboarding/complete-step", requireAuth, async (req: AuthRequest, r
 });
 
 // Reset onboarding (for testing or admin use)
-router.post("/onboarding/reset", requireAuth, async (req: AuthRequest, res) => {
+router.post("/onboarding/reset", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     

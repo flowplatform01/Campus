@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,39 +8,64 @@ import { useToast } from '@/hooks/use-toast';
 import { Bell, CheckCheck, Trash2, School, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { mockNotifications } from '@/data-access/mockData';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 
 export default function Notifications() {
   const { user } = useRequireAuth();
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const qc = useQueryClient();
   const { toast } = useToast();
 
-  const handleMarkAsRead = (id: string) => {
-    setNotifications(notifications.map(notif => 
-      notif.id === id ? { ...notif, read: true } : notif
-    ));
+  type NotificationItem = {
+    id: string;
+    type: 'campus' | 'social' | string;
+    title: string;
+    message: string;
+    actionUrl?: string | null;
+    icon?: string | null;
+    read: boolean;
+    createdAt: string;
   };
 
-  const handleMarkAllAsRead = () => {
-    setNotifications(notifications.map(notif => ({ ...notif, read: true })));
-    toast({
-      description: 'All notifications marked as read'
-    });
-  };
+  const { data, isLoading } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: api.notifications.getAll,
+  });
 
-  const handleDelete = (id: string) => {
-    setNotifications(notifications.filter(notif => notif.id !== id));
-    toast({
-      description: 'Notification deleted'
-    });
-  };
+  const notifications: NotificationItem[] = (data as any)?.notifications || [];
+  const unreadCount = (data as any)?.unreadCount ?? notifications.filter((n: any) => !n.read).length;
 
-  const campusNotifications = notifications.filter(n => n.type === 'campus');
-  const socialNotifications = notifications.filter(n => n.type === 'social');
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const markRead = useMutation({
+    mutationFn: (id: string) => api.notifications.markRead(id),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onError: (e: any) => toast({ description: e?.message || 'Failed to mark as read', variant: 'destructive' }),
+  });
 
-  const NotificationCard = ({ notif }: { notif: typeof notifications[0] }) => (
+  const markAllRead = useMutation({
+    mutationFn: () => api.notifications.markAllRead(),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['notifications'] });
+      toast({ description: 'All notifications marked as read' });
+    },
+    onError: (e: any) => toast({ description: e?.message || 'Failed to mark all as read', variant: 'destructive' }),
+  });
+
+  const deleteNotif = useMutation({
+    mutationFn: (id: string) => api.notifications.remove(id),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['notifications'] });
+      toast({ description: 'Notification deleted' });
+    },
+    onError: (e: any) => toast({ description: e?.message || 'Failed to delete', variant: 'destructive' }),
+  });
+
+  const campusNotifications = useMemo(() => notifications.filter((n: NotificationItem) => n.type === 'campus'), [notifications]);
+  const socialNotifications = useMemo(() => notifications.filter((n: NotificationItem) => n.type === 'social'), [notifications]);
+
+  const NotificationCard = ({ notif }: { notif: NotificationItem }) => (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -73,7 +98,7 @@ export default function Notifications() {
                   <p className="text-sm text-muted-foreground mt-1">{notif.message}</p>
                   <div className="flex items-center gap-4 mt-2">
                     <p className="text-xs text-muted-foreground">
-                      {new Date(notif.timestamp).toLocaleString()}
+                      {new Date(notif.createdAt).toLocaleString()}
                     </p>
                     <Badge variant="outline" className="text-xs">
                       {notif.type === 'campus' ? 'Campus' : 'Social'}
@@ -86,7 +111,7 @@ export default function Notifications() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleMarkAsRead(notif.id)}
+                      onClick={() => markRead.mutate(notif.id)}
                       className="h-8"
                     >
                       <CheckCheck className="w-4 h-4" />
@@ -95,7 +120,7 @@ export default function Notifications() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(notif.id)}
+                    onClick={() => deleteNotif.mutate(notif.id)}
                     className="h-8 text-destructive hover:text-destructive"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -131,7 +156,7 @@ export default function Notifications() {
             <p className="text-muted-foreground">Stay updated with campus and social activities</p>
           </div>
           {unreadCount > 0 && (
-            <Button variant="outline" onClick={handleMarkAllAsRead} className="gap-2">
+            <Button variant="outline" onClick={() => markAllRead.mutate()} className="gap-2">
               <CheckCheck className="w-4 h-4" />
               Mark all as read
             </Button>
@@ -150,18 +175,18 @@ export default function Notifications() {
             <TabsTrigger value="campus" className="gap-2">
               <School className="w-4 h-4" />
               Campus
-              {campusNotifications.filter(n => !n.read).length > 0 && (
+              {campusNotifications.filter((n: NotificationItem) => !n.read).length > 0 && (
                 <Badge variant="secondary" className="ml-1">
-                  {campusNotifications.filter(n => !n.read).length}
+                  {campusNotifications.filter((n: NotificationItem) => !n.read).length}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="social" className="gap-2">
               <Users className="w-4 h-4" />
               Social
-              {socialNotifications.filter(n => !n.read).length > 0 && (
+              {socialNotifications.filter((n: NotificationItem) => !n.read).length > 0 && (
                 <Badge variant="secondary" className="ml-1">
-                  {socialNotifications.filter(n => !n.read).length}
+                  {socialNotifications.filter((n: NotificationItem) => !n.read).length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -169,8 +194,14 @@ export default function Notifications() {
 
           <TabsContent value="all" className="mt-6">
             <ScrollArea className="h-[calc(100vh-16rem)]">
-              {notifications.length > 0 ? (
-                notifications.map((notif) => (
+              {isLoading ? (
+                <Card className="p-12">
+                  <div className="text-center">
+                    <p className="text-muted-foreground">Loading notifications...</p>
+                  </div>
+                </Card>
+              ) : notifications.length > 0 ? (
+                notifications.map((notif: NotificationItem) => (
                   <NotificationCard key={notif.id} notif={notif} />
                 ))
               ) : (
@@ -187,7 +218,7 @@ export default function Notifications() {
           <TabsContent value="campus" className="mt-6">
             <ScrollArea className="h-[calc(100vh-16rem)]">
               {campusNotifications.length > 0 ? (
-                campusNotifications.map((notif) => (
+                campusNotifications.map((notif: NotificationItem) => (
                   <NotificationCard key={notif.id} notif={notif} />
                 ))
               ) : (
@@ -204,7 +235,7 @@ export default function Notifications() {
           <TabsContent value="social" className="mt-6">
             <ScrollArea className="h-[calc(100vh-16rem)]">
               {socialNotifications.length > 0 ? (
-                socialNotifications.map((notif) => (
+                socialNotifications.map((notif: NotificationItem) => (
                   <NotificationCard key={notif.id} notif={notif} />
                 ))
               ) : (

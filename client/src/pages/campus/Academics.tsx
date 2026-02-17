@@ -12,12 +12,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, GraduationCap, Book, Edit, Trash2 } from 'lucide-react';
+import { useLocation } from 'wouter';
 
 export default function CampusAcademicsPage() {
   useRequireAuth();
   const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const { data: grades } = useQuery({
     queryKey: ['grades', user?.id],
@@ -89,7 +91,7 @@ export default function CampusAcademicsPage() {
           </div>
           {user?.role === 'admin' && (
             <div className="flex gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => setLocation('/campus/promotions')}>
                 <GraduationCap className="w-4 h-4 mr-2" />
                 Promote Students
               </Button>
@@ -245,7 +247,7 @@ export default function CampusAcademicsPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">Select current and target academic years/classes to begin promotion.</p>
-                  <Button className="mt-4" variant="outline">Start Promotion Wizard</Button>
+                  <Button className="mt-4" variant="outline" onClick={() => setLocation('/campus/promotions')}>Open Promotions</Button>
                 </CardContent>
               </Card>
             </TabsContent>

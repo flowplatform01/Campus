@@ -20,6 +20,10 @@ export const schools = pgTable("schools", {
   address: text("address"),
   phone: text("phone"),
   email: text("email"),
+  enrollmentOpen: boolean("enrollment_open").default(true).notNull(),
+  studentApplicationsEnabled: boolean("student_applications_enabled").default(true).notNull(),
+  parentApplicationsEnabled: boolean("parent_applications_enabled").default(true).notNull(),
+  staffApplicationsEnabled: boolean("staff_applications_enabled").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

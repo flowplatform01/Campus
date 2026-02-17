@@ -77,6 +77,15 @@ export default function ParentDashboard() {
     ? gradeRows.reduce((acc: number, g: any) => acc + (g.score / g.maxScore) * 100, 0) / gradeRows.length
     : 0;
 
+  const getSubjectLabel = (subject: any): string => {
+    if (typeof subject === 'string') return subject;
+    if (subject && typeof subject === 'object') {
+      if (typeof subject.name === 'string') return subject.name;
+      if (typeof subject.code === 'string') return subject.code;
+    }
+    return 'Subject';
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -180,7 +189,7 @@ export default function ParentDashboard() {
                 {gradeRows.slice(0, 4).map((grade: any) => (
                   <div key={grade.id} className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">{grade.subject}</p>
+                      <p className="font-medium">{getSubjectLabel(grade.subject)}</p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(grade.date).toLocaleDateString()}
                       </p>

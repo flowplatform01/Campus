@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,12 @@ import { useToast } from '@/hooks/use-toast';
 import { UserRole } from '@/data-access/mockData';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Mail, Lock, User, Hash, School, UserCircle, Users, Briefcase } from 'lucide-react';
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 export default function Register() {
   const [step, setStep] = useState<'role' | 'form'>('role');
@@ -23,9 +29,99 @@ export default function Register() {
     employeeId: ''
   });
   const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  const googleClientId = useMemo(() => (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string | undefined, []);
+  const googleDivRef = useRef<HTMLDivElement | null>(null);
+  const googleRoleDivRef = useRef<HTMLDivElement | null>(null);
+  const [gisReady, setGisReady] = useState(false);
+
+  const selectedRoleFromUrl = useMemo(() => {
+    const params = new URLSearchParams(location.split('?')[1]);
+    const r = params.get('role');
+    if (r === 'admin' || r === 'student' || r === 'parent' || r === 'employee') return r;
+    return null;
+  }, [location]);
+
+  useEffect(() => {
+    if (!selectedRoleFromUrl) return;
+    setSelectedRole(selectedRoleFromUrl as any);
+    setStep('form');
+  }, [selectedRoleFromUrl]);
+
+  useEffect(() => {
+    if (!googleClientId) return;
+    if (window.google?.accounts?.id) {
+      setGisReady(true);
+      return;
+    }
+    const existing = document.querySelector('script[data-google-identity]');
+    if (existing) {
+      const startedAt = Date.now();
+      const t = window.setInterval(() => {
+        if (window.google?.accounts?.id) {
+          setGisReady(true);
+          window.clearInterval(t);
+        } else if (Date.now() - startedAt > 8000) {
+          window.clearInterval(t);
+        }
+      }, 200);
+      return () => window.clearInterval(t);
+    }
+
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.setAttribute('data-google-identity', '1');
+    s.onload = () => setGisReady(true);
+    s.onerror = () => {
+      toast({ title: 'Google signup unavailable', description: 'Failed to load Google script', variant: 'destructive' });
+    };
+    document.body.appendChild(s);
+  }, [googleClientId, toast]);
+
+  useEffect(() => {
+    if (!googleClientId) return;
+    if (!gisReady) return;
+    if (!window.google?.accounts?.id) return;
+
+    const target = step === 'role' ? googleRoleDivRef.current : googleDivRef.current;
+    if (!target) return;
+
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: async (resp: any) => {
+        const credential = resp?.credential;
+        if (!credential) {
+          toast({ title: 'Google signup failed', description: 'No credential returned', variant: 'destructive' });
+          return;
+        }
+        try {
+          const role = (selectedRoleFromUrl || selectedRole) as any;
+          const result = await loginWithGoogle(String(credential), role || undefined);
+          if (result.status === 'needs_role_selection') {
+            sessionStorage.setItem('pending_google_id_token', String(credential));
+            sessionStorage.setItem('pending_google_profile', JSON.stringify(result.profile));
+            setLocation('/role-selection?source=google');
+            return;
+          }
+          toast({ title: 'Welcome!', description: 'Successfully signed in with Google' });
+        } catch (e: any) {
+          toast({ title: 'Google signup failed', description: e?.message || 'Error', variant: 'destructive' });
+        }
+      },
+    });
+
+    target.innerHTML = '';
+    window.google.accounts.id.renderButton(target, {
+      theme: 'outline',
+      size: 'large',
+      width: 360,
+    });
+  }, [gisReady, googleClientId, loginWithGoogle, selectedRole, selectedRoleFromUrl, setLocation, step, toast]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,13 +162,6 @@ export default function Register() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSocialSignup = (provider: string) => {
-    toast({
-      title: `${provider} Signup`,
-      description: 'Social signup would be handled here in production'
-    });
   };
 
   const roleOptions = [
@@ -116,6 +205,21 @@ export default function Register() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div ref={googleRoleDivRef} />
+                  </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">
+                        Or select a role
+                      </span>
+                    </div>
+                  </div>
+
                   {roleOptions.map((role) => {
                     const Icon = role.icon;
                     return (
@@ -167,16 +271,8 @@ export default function Register() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-3">
-                    <Button variant="outline" onClick={() => handleSocialSignup('Google')}>
-                      G
-                    </Button>
-                    <Button variant="outline" onClick={() => handleSocialSignup('Facebook')}>
-                      F
-                    </Button>
-                    <Button variant="outline" onClick={() => handleSocialSignup('Apple')}>
-                      A
-                    </Button>
+                  <div className="grid grid-cols-1 gap-3">
+                    <div ref={googleDivRef} />
                   </div>
 
                   <div className="relative">

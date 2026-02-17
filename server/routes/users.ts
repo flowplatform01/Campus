@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "../db.js";
-import { users, employeeSubRoles } from "@shared/schema";
+import { users, employeeSubRoles, parentChildren, studentEnrollments, schoolClasses, classSections, subjectTeacherAssignments, subjects } from "@shared/schema";
 import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } from "../middleware/auth.js";
 
 const router = Router();
@@ -112,10 +112,19 @@ router.post("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res)
   }
 });
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
+    const requester = req.user!;
+    const requesterSchoolId = requester.schoolId ?? null;
+    if (!requesterSchoolId) return res.status(400).json({ message: "User is not linked to a school" });
+
     const [user] = await db.select().from(users).where(eq(users.id, req.params.id!)).limit(1);
     if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (!validateTenantAccess(requesterSchoolId, user.schoolId ?? "")) {
+      return res.status(403).json({ message: "Cross-tenant access denied" });
+    }
+
     return res.json({
       id: user.id,
       email: user.email,
@@ -135,6 +144,80 @@ router.get("/:id", requireAuth, async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({ message: "Failed to fetch user" });
+  }
+});
+
+router.get("/:id/info", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  try {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Not allowed" });
+    const schoolId = req.user!.schoolId;
+    if (!schoolId) return res.status(400).json({ message: "No school linked" });
+
+    const [u] = await db.select().from(users).where(eq(users.id, req.params.id!)).limit(1);
+    if (!u) return res.status(404).json({ message: "User not found" });
+    if (!validateTenantAccess(schoolId, u.schoolId ?? "")) return res.status(403).json({ message: "Cross-tenant access denied" });
+
+    const baseUser = {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      avatar: u.avatarUrl,
+      phone: u.phone,
+      studentId: u.studentId,
+      employeeId: u.employeeId,
+      grade: u.grade,
+      classSection: u.classSection,
+      subRole: u.subRole,
+      createdAt: u.createdAt,
+    };
+
+    if (u.role === "parent") {
+      const children = await db
+        .select({ id: users.id, name: users.name, email: users.email, role: users.role, studentId: users.studentId, grade: users.grade, classSection: users.classSection })
+        .from(parentChildren)
+        .innerJoin(users, eq(users.id, parentChildren.childId))
+        .where(eq(parentChildren.parentId, u.id));
+
+      return res.json({ user: baseUser, related: { children } });
+    }
+
+    if (u.role === "student") {
+      const [enrollment] = await db
+        .select({
+          id: studentEnrollments.id,
+          status: studentEnrollments.status,
+          classId: studentEnrollments.classId,
+          sectionId: studentEnrollments.sectionId,
+          className: schoolClasses.name,
+          sectionName: classSections.name,
+          academicYearId: studentEnrollments.academicYearId,
+          createdAt: studentEnrollments.createdAt,
+        })
+        .from(studentEnrollments)
+        .innerJoin(schoolClasses, eq(schoolClasses.id, studentEnrollments.classId))
+        .leftJoin(classSections, eq(classSections.id, studentEnrollments.sectionId))
+        .where(and(eq(studentEnrollments.schoolId, schoolId), eq(studentEnrollments.studentId, u.id)))
+        .orderBy(studentEnrollments.createdAt)
+        .limit(1);
+
+      return res.json({ user: baseUser, related: { enrollment: enrollment ?? null } });
+    }
+
+    if (u.role === "employee") {
+      const teaching = await db
+        .select({ subjectId: subjects.id, subjectName: subjects.name, subjectCode: subjects.code })
+        .from(subjectTeacherAssignments)
+        .innerJoin(subjects, eq(subjects.id, subjectTeacherAssignments.subjectId))
+        .where(and(eq(subjectTeacherAssignments.schoolId, schoolId), eq(subjectTeacherAssignments.teacherId, u.id)));
+
+      return res.json({ user: baseUser, related: { teaching } });
+    }
+
+    return res.json({ user: baseUser, related: {} });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to load user info" });
   }
 });
 

@@ -4,6 +4,46 @@ function getToken(): string | null {
   return localStorage.getItem("campus_access_token");
 }
 
+function getRefreshToken(): string | null {
+  return localStorage.getItem("campus_refresh_token");
+}
+
+let refreshing: Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> | null = null;
+
+async function refreshAccessToken(): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
+  const rt = getRefreshToken();
+  if (!rt) return null;
+
+  if (!refreshing) {
+    refreshing = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: rt }),
+        });
+        if (!res.ok) return null;
+        const data = (await res.json().catch(() => null)) as any;
+        if (!data?.accessToken || !data?.refreshToken) return null;
+
+        localStorage.setItem("campus_access_token", data.accessToken);
+        localStorage.setItem("campus_refresh_token", data.refreshToken);
+        return {
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          expiresIn: Number(data.expiresIn ?? 0),
+        };
+      } catch {
+        return null;
+      } finally {
+        refreshing = null;
+      }
+    })();
+  }
+
+  return refreshing;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
@@ -23,8 +63,36 @@ async function request<T>(
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(url, { ...options, headers });
-  const data = await res.json().catch(() => ({}));
+  async function doFetch(withToken?: string | null) {
+    const nextHeaders: Record<string, string> = { ...headers };
+    if (withToken) {
+      nextHeaders["Authorization"] = `Bearer ${withToken}`;
+    } else {
+      delete nextHeaders["Authorization"];
+    }
+    return fetch(url, { ...options, headers: nextHeaders });
+  }
+
+  let res: Response;
+  try {
+    res = await doFetch(token);
+  } catch {
+    throw new Error("Unable to reach server");
+  }
+
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed?.accessToken) {
+      try {
+        res = await doFetch(refreshed.accessToken);
+      } catch {
+        throw new Error("Unable to reach server");
+      }
+    }
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await res.json().catch(() => ({})) : {};
   if (!res.ok) {
     throw new Error(data.message || "Request failed");
   }
@@ -40,6 +108,7 @@ export interface ApiUser {
   verified?: boolean;
   schoolLinked?: boolean;
   avatar?: string;
+  phone?: string | null;
   points?: number;
   badges?: string[];
   onboardingCompletedAt?: string | null;
@@ -53,29 +122,41 @@ export interface AuthResponse {
   verificationEmailSent?: boolean;
 }
 
+export type GoogleAuthNeedsRoleSelection = {
+  needsRoleSelection: true;
+  profile: {
+    email: string;
+    name: string;
+    avatarUrl: string | null;
+  };
+};
+
 export const api = {
   auth: {
-    login: async (email: string, password: string): Promise<AuthResponse> => {
-      return request<AuthResponse>("/api/auth/login", {
+    login: async (email: string, password: string) =>
+      request<{ user: ApiUser; accessToken: string; refreshToken: string }>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
-      });
-    },
+      }),
+    googleLogin: async (idToken: string, role?: "admin" | "student" | "parent" | "employee") =>
+      request<{ user: ApiUser; accessToken: string; refreshToken: string } | GoogleAuthNeedsRoleSelection>("/api/auth/google", {
+        method: "POST",
+        body: JSON.stringify({ idToken, role }),
+      }),
     register: async (data: {
       email: string;
       password: string;
       name: string;
-      role: string;
+      role: "admin" | "student" | "parent" | "employee";
       schoolName?: string;
       studentId?: string;
       employeeId?: string;
       subRole?: string;
-    }): Promise<AuthResponse> => {
-      return request<AuthResponse>("/api/auth/register", {
+    }) =>
+      request<{ user: ApiUser; accessToken: string; refreshToken: string; verificationEmailSent?: boolean }>("/api/auth/register", {
         method: "POST",
         body: JSON.stringify(data),
-      });
-    },
+      }),
     refresh: async (refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> => {
       return request("/api/auth/refresh", {
         method: "POST",
@@ -84,6 +165,18 @@ export const api = {
     },
     me: async (): Promise<ApiUser> => {
       return request<ApiUser>("/api/auth/me");
+    },
+    updateMe: async (data: Partial<{ name: string; phone: string; avatarUrl: string }>): Promise<ApiUser> => {
+      return request<ApiUser>("/api/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    changePassword: async (data: { currentPassword: string; newPassword: string }): Promise<{ message: string }> => {
+      return request<{ message: string }>("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
     },
     verifyEmail: async (token: string): Promise<void> => {
       return request("/api/auth/verify-email", {
@@ -155,6 +248,9 @@ export const api = {
     getAll: async () => request("/api/notifications"),
     markRead: async (id: string) =>
       request(`/api/notifications/${id}/read`, { method: "PATCH" }),
+    unreadCount: async () => request("/api/notifications/unread-count"),
+    markAllRead: async () => request("/api/notifications/read-all", { method: "PATCH" }),
+    remove: async (id: string) => request(`/api/notifications/${id}`, { method: "DELETE" }),
   },
   communities: {
     getAll: async () => request("/api/communities"),
@@ -169,6 +265,7 @@ export const api = {
   },
   users: {
     getById: async (id: string) => request<ApiUser>(`/api/users/${id}`),
+    getInfo: async (id: string) => request<any>(`/api/users/${id}/info`),
     list: async () => request<any[]>("/api/users"),
     listStaff: async () => request<any[]>("/api/users/staff"),
     create: async (data: {
@@ -615,7 +712,10 @@ export const api = {
   },
   enrollment: {
     schools: {
-      search: async () => request<any[]>("/api/enrollment/schools"),
+      search: async (q?: string) => {
+        const qs = q && q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+        return request<any[]>(`/api/enrollment/schools${qs}`);
+      },
     },
     student: {
       myApplications: async () => request<any[]>("/api/enrollment/student/applications"),
