@@ -464,6 +464,7 @@ router.get("/my-assignments", requireAuth, requireTenantAccess, async (req: Auth
           SELECT COUNT(*) 
           FROM ${studentEnrollments} 
           WHERE ${studentEnrollments.classId} = ${schoolClasses.id} 
+          AND ${studentEnrollments.schoolId} = ${schoolId}
           AND ${studentEnrollments.status} = 'active'
         )`
       })
@@ -477,21 +478,25 @@ router.get("/my-assignments", requireAuth, requireTenantAccess, async (req: Auth
       ))
       .orderBy(schoolClasses.name, subjects.name);
     
-    const result = assignments.map(assignment => ({
-      id: assignment.assignment.id,
-      teacherId: assignment.assignment.teacherId,
-      classId: assignment.assignment.classId,
-      subjectId: assignment.assignment.subjectId,
-      sectionId: assignment.assignment.sectionId,
-      enrolledStudents: assignment.enrolledStudents || 0
+    const result = assignments.map((a) => ({
+      id: a.assignment.id,
+      teacherId: a.assignment.teacherId,
+      classId: a.assignment.classId,
+      className: a.class?.name ?? null,
+      subjectId: a.assignment.subjectId,
+      subjectName: a.subject?.name ?? null,
+      subjectCode: a.subject?.code ?? null,
+      sectionId: a.assignment.sectionId,
+      sectionName: a.section?.name ?? null,
+      enrolledStudents: a.enrolledStudents || 0,
     }));
     
     res.json({
       assignments: result,
       total: result.length,
       totalStudents: result.reduce((sum: number, a: any) => sum + (a.enrolledStudents || 0), 0),
-      subjectsTaught: Array.from(new Set(result.map((a: any) => a.subject?.name))).length,
-      classesTaught: Array.from(new Set(result.map((a: any) => a.class?.name))).length
+      subjectsTaught: Array.from(new Set(result.map((a: any) => a.subjectName).filter(Boolean))).length,
+      classesTaught: Array.from(new Set(result.map((a: any) => a.className).filter(Boolean))).length
     });
   } catch (error: any) {
     console.error('Teacher assignments dashboard error:', error);

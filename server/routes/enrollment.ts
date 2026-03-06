@@ -459,6 +459,23 @@ router.post("/student/apply", requireAuth, async (req: AuthRequest, res) => {
     return res.status(400).json({ message: "Invalid classId" });
   }
 
+  // Prevent duplicate active applications for the same school/class
+  const existing = await db
+    .select({ id: enrollmentApplications.id, status: enrollmentApplications.status })
+    .from(enrollmentApplications)
+    .where(
+      and(
+        eq(enrollmentApplications.applicantUserId, req.user!.id),
+        eq(enrollmentApplications.type, "student_self"),
+        eq(enrollmentApplications.schoolId, body.schoolId),
+        eq(enrollmentApplications.classId, body.classId),
+      ),
+    )
+    .limit(1);
+  if (existing && !["rejected", "withdrawn"].includes(existing.status)) {
+    return res.status(400).json({ message: "You already have an application for this class at this school" });
+  }
+
   const [row] = await db.insert(enrollmentApplications).values({ type: "student_self", schoolId: body.schoolId, applicantUserId: req.user!.id, status: "submitted", classId: body.classId, payload: body }).returning();
   return res.status(201).json(row);
 });
@@ -543,6 +560,24 @@ router.post("/parent/apply-for-child", requireAuth, async (req: AuthRequest, res
     return res.status(400).json({ message: "Invalid classId" });
   }
 
+  // Prevent duplicate active parent-student applications for the same child/school/class
+  const existing = await db
+    .select({ id: enrollmentApplications.id, status: enrollmentApplications.status })
+    .from(enrollmentApplications)
+    .where(
+      and(
+        eq(enrollmentApplications.applicantUserId, req.user!.id),
+        eq(enrollmentApplications.type, "parent_student"),
+        eq(enrollmentApplications.schoolId, body.schoolId),
+        eq(enrollmentApplications.classId, body.classId),
+        eq(enrollmentApplications.pendingStudentProfileId, body.childId),
+      ),
+    )
+    .limit(1);
+  if (existing && !["rejected", "withdrawn"].includes(existing.status)) {
+    return res.status(400).json({ message: "You already have an application for this child and class" });
+  }
+
   const [row] = await db.insert(enrollmentApplications).values({ type: "parent_student", schoolId: body.schoolId, applicantUserId: req.user!.id, status: "submitted", classId: body.classId, pendingStudentProfileId: body.childId, payload: { documents: body.documents } }).returning();
   return res.status(201).json(row);
 });
@@ -597,6 +632,22 @@ router.post("/employee/apply", requireAuth, async (req: AuthRequest, res) => {
     }
   }
 
+  // Prevent duplicate active employee applications per school
+  const existing = await db
+    .select({ id: enrollmentApplications.id, status: enrollmentApplications.status })
+    .from(enrollmentApplications)
+    .where(
+      and(
+        eq(enrollmentApplications.applicantUserId, req.user!.id),
+        eq(enrollmentApplications.type, "employee"),
+        eq(enrollmentApplications.schoolId, body.schoolId),
+      ),
+    )
+    .limit(1);
+  if (existing && !["rejected", "withdrawn"].includes(existing.status)) {
+    return res.status(400).json({ message: "You already have a pending application for this school" });
+  }
+
   const [row] = await db
     .insert(enrollmentApplications)
     .values({
@@ -621,6 +672,8 @@ router.post("/auto-enroll", requireAuth, requireTenantAccess, async (req: AuthRe
       return res.status(403).json({ message: "Not allowed" });
     }
     const schoolId = req.user!.schoolId!;
+    const requestedClassId = typeof (req.body as any)?.classId === "string" ? String((req.body as any).classId) : "";
+    const requestedSectionId = typeof (req.body as any)?.sectionId === "string" ? String((req.body as any).sectionId) : "";
     
     // 🔍 FIND ALL ORPHANED STUDENTS
     console.log('Finding orphaned students for school:', schoolId);
@@ -664,29 +717,36 @@ router.post("/auto-enroll", requireAuth, requireTenantAccess, async (req: AuthRe
       ))
       .limit(1);
     
-    // 📚 GET DEFAULT CLASS (Grade 1, Section 1)
-    const [defaultClass] = await db
-      .select()
-      .from(schoolClasses)
-      .where(and(
-        eq(schoolClasses.schoolId, schoolId),
-        eq(schoolClasses.name, "Grade 1")
-      ))
-      .limit(1);
-    
+    // 📚 GET DEFAULT CLASS/SECTION (enterprise-safe: use explicit IDs if provided, otherwise choose the first class by sortOrder)
+    const [defaultClass] = requestedClassId
+      ? await db
+          .select()
+          .from(schoolClasses)
+          .where(and(eq(schoolClasses.schoolId, schoolId), eq(schoolClasses.id, requestedClassId)))
+          .limit(1)
+      : await db
+          .select()
+          .from(schoolClasses)
+          .where(eq(schoolClasses.schoolId, schoolId))
+          .orderBy(schoolClasses.sortOrder, schoolClasses.name)
+          .limit(1);
+
     if (!defaultClass) {
-      return res.status(400).json({ message: "No default class found for enrollment" });
+      return res.status(400).json({ message: "No class found for enrollment. Create classes first." });
     }
-    
-    const [defaultSection] = await db
-      .select()
-      .from(classSections)
-      .where(and(
-        eq(classSections.schoolId, schoolId),
-        eq(classSections.classId, defaultClass.id),
-        eq(classSections.name, "Section 1")
-      ))
-      .limit(1);
+
+    const [defaultSection] = requestedSectionId
+      ? await db
+          .select()
+          .from(classSections)
+          .where(and(eq(classSections.schoolId, schoolId), eq(classSections.id, requestedSectionId), eq(classSections.classId, defaultClass.id)))
+          .limit(1)
+      : await db
+          .select()
+          .from(classSections)
+          .where(and(eq(classSections.schoolId, schoolId), eq(classSections.classId, defaultClass.id)))
+          .orderBy(classSections.name)
+          .limit(1);
     
     let enrolledCount = 0;
     const enrollmentResults = [];
@@ -742,7 +802,7 @@ router.post("/auto-enroll", requireAuth, requireTenantAccess, async (req: AuthRe
           .update(users)
           .set({
             grade: defaultClass.name,
-            classSection: defaultSection?.name || "Section 1"
+            classSection: defaultSection?.name ?? null,
           })
           .where(eq(users.id, student.id));
         
@@ -753,7 +813,7 @@ router.post("/auto-enroll", requireAuth, requireTenantAccess, async (req: AuthRe
           enrollmentId: enrollment.id,
           status: "enrolled",
           class: defaultClass.name,
-          section: defaultSection?.name || "Section 1"
+          section: defaultSection?.name ?? null
         });
         
       } catch (error: unknown) {
@@ -832,21 +892,27 @@ router.get("/dashboard", requireAuth, requireTenantAccess, async (req: AuthReque
       .orderBy(studentEnrollments.createdAt);
     
     // 📊 GRADUATION CANDIDATES
-    const graduationCandidates = await db
-      .select({
-        student: { name: users.name, email: users.email },
-        enrollment: studentEnrollments,
-        class: { name: schoolClasses.name }
-      })
-      .from(studentEnrollments)
-      .leftJoin(users, eq(users.id, studentEnrollments.studentId))
-      .leftJoin(schoolClasses, eq(schoolClasses.id, studentEnrollments.classId))
-      .where(and(
-        eq(studentEnrollments.schoolId, schoolId),
-        eq(studentEnrollments.status, "active"),
-        eq(schoolClasses.name, "Grade 6") // Assuming Grade 6 is final grade
-      ))
-      .orderBy(users.name);
+    // Enterprise-safe: treat "final class" as the class with the highest sortOrder.
+    const [finalClass] = await db
+      .select({ id: schoolClasses.id, name: schoolClasses.name })
+      .from(schoolClasses)
+      .where(eq(schoolClasses.schoolId, schoolId))
+      .orderBy(desc(schoolClasses.sortOrder), desc(schoolClasses.name))
+      .limit(1);
+
+    const graduationCandidates = finalClass
+      ? await db
+          .select({
+            student: { name: users.name, email: users.email },
+            enrollment: studentEnrollments,
+            class: { name: schoolClasses.name },
+          })
+          .from(studentEnrollments)
+          .leftJoin(users, eq(users.id, studentEnrollments.studentId))
+          .leftJoin(schoolClasses, eq(schoolClasses.id, studentEnrollments.classId))
+          .where(and(eq(studentEnrollments.schoolId, schoolId), eq(studentEnrollments.status, "active"), eq(studentEnrollments.classId, finalClass.id)))
+          .orderBy(users.name)
+      : [];
     
     // 📊 CLASS ENROLLMENT BREAKDOWN
     const classBreakdown = await db
@@ -881,195 +947,7 @@ router.get("/dashboard", requireAuth, requireTenantAccess, async (req: AuthReque
     
   } catch (error: any) {
     console.error('Enrollment dashboard error:', error);
-    res.status(500).json({ message: "Failed to load enrollment dashboard" });
-  }
-});
-
-// 🔧 PROMOTE STUDENTS (YEAR END)
-router.post("/promote", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
-  try {
-    if (req.user!.role !== "admin") {
-      return res.status(403).json({ message: "Not allowed" });
-    }
-    const schoolId = req.user!.schoolId!;
-    const { targetYearId } = req.body;
-    
-    if (!targetYearId) {
-      return res.status(400).json({ message: "Target academic year ID required" });
-    }
-    
-    // 🔍 GET ALL ACTIVE STUDENTS IN CURRENT YEAR
-    const [currentYear] = await db
-      .select()
-      .from(academicYears)
-      .where(and(
-        eq(academicYears.schoolId, schoolId),
-        eq(academicYears.isActive, true)
-      ))
-      .limit(1);
-
-    if (!currentYear) {
-      return res.status(400).json({ message: "No active academic year found" });
-    }
-    
-    const activeEnrollments = await db
-      .select({
-        enrollment: studentEnrollments,
-        student: users,
-        class: schoolClasses
-      })
-      .from(studentEnrollments)
-      .leftJoin(users, eq(users.id, studentEnrollments.studentId))
-      .leftJoin(schoolClasses, eq(schoolClasses.id, studentEnrollments.classId))
-      .where(and(
-        eq(studentEnrollments.schoolId, schoolId),
-        eq(studentEnrollments.academicYearId, currentYear.id),
-        eq(studentEnrollments.status, "active")
-      ));
-    
-    let promotedCount = 0;
-    let graduatedCount = 0;
-    const promotionResults = [];
-    
-    for (const { enrollment, student, class: currentClass } of activeEnrollments) {
-      try {
-        if (!student) {
-          promotionResults.push({
-            action: "error",
-            message: "Student record missing for enrollment",
-            enrollmentId: enrollment.id,
-          });
-          continue;
-        }
-
-        // 🎓 GRADUATION LOGIC (Grade 6 students)
-        if (currentClass?.name === "Grade 6") {
-          await db
-            .update(studentEnrollments)
-            .set({ status: "graduated" })
-            .where(eq(studentEnrollments.id, enrollment.id));
-          
-          await db
-            .update(users)
-            .set({ grade: null, classSection: null })
-            .where(eq(users.id, student.id));
-          
-          graduatedCount++;
-          promotionResults.push({
-            studentId: student.id,
-            studentName: student.name,
-            action: "graduated",
-            fromGrade: "Grade 6"
-          });
-          continue;
-        }
-        
-        // 📈 PROMOTION LOGIC
-        const currentGradeNum = parseInt(currentClass?.name.replace("Grade ", "") || "0");
-        const nextGradeNum = currentGradeNum + 1;
-        const nextGradeName = `Grade ${nextGradeNum}`;
-        
-        // Find next class
-        const [nextClass] = await db
-          .select()
-          .from(schoolClasses)
-          .where(and(
-            eq(schoolClasses.schoolId, schoolId),
-            eq(schoolClasses.name, nextGradeName)
-          ))
-          .limit(1);
-        
-        if (!nextClass) {
-          promotionResults.push({
-            studentId: student.id,
-            studentName: student.name,
-            action: "no_next_class",
-            fromGrade: currentClass?.name
-          });
-          continue;
-        }
-        
-        // Get default section for next grade
-        const [nextSection] = await db
-          .select()
-          .from(classSections)
-          .where(and(
-            eq(classSections.schoolId, schoolId),
-            eq(classSections.classId, nextClass.id),
-            eq(classSections.name, "Section 1")
-          ))
-          .limit(1);
-        
-        // Create new enrollment for next year
-        const [newEnrollment] = await db
-          .insert(studentEnrollments)
-          .values({
-            studentId: student.id,
-            academicYearId: targetYearId,
-            classId: nextClass.id,
-            sectionId: nextSection?.id,
-            status: "active",
-            schoolId
-          })
-          .returning();
-
-        if (!newEnrollment) {
-          promotionResults.push({
-            studentId: student.id,
-            studentName: student.name,
-            action: "error",
-            message: "Failed to create new enrollment"
-          });
-          continue;
-        }
-        
-        // Update current enrollment status
-        await db
-          .update(studentEnrollments)
-          .set({ status: "promoted" })
-          .where(eq(studentEnrollments.id, enrollment.id));
-        
-        // Update student record
-        await db
-          .update(users)
-          .set({
-            grade: nextGradeName,
-            classSection: nextSection?.name || "Section 1"
-          })
-          .where(eq(users.id, student.id));
-        
-        promotedCount++;
-        promotionResults.push({
-          studentId: student.id,
-          studentName: student.name,
-          action: "promoted",
-          fromGrade: currentClass?.name,
-          toGrade: nextGradeName,
-          newEnrollmentId: newEnrollment.id
-        });
-        
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        promotionResults.push({
-          studentId: student?.id,
-          studentName: student?.name,
-          action: "error",
-          message
-        });
-      }
-    }
-    
-    res.json({
-      message: "Student promotion completed",
-      totalProcessed: activeEnrollments.length,
-      promoted: promotedCount,
-      graduated: graduatedCount,
-      results: promotionResults
-    });
-    
-  } catch (error: any) {
-    console.error('Student promotion error:', error);
-    res.status(500).json({ message: "Student promotion failed" });
+    return res.status(500).json({ message: "Failed to load enrollment dashboard" });
   }
 });
 

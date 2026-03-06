@@ -1,9 +1,20 @@
 import { Router } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { requireAuth, AuthRequest, requireTenantAccess, validateTenantAccess } from "../middleware/auth.js";
 import { SchoolBrandingService } from "../services/school-branding-service.js";
+import { storeAsset } from "../services/smart-storage.js";
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+function ensureImageMime(mime: string) {
+  return mime === "image/png" || mime === "image/jpeg" || mime === "image/webp";
+}
 
 // Get school branding information
 router.get("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
@@ -97,7 +108,7 @@ router.patch("/", requireAuth, requireTenantAccess, async (req: AuthRequest, res
 });
 
 // Upload school logo
-router.post("/logo", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+router.post("/logo", requireAuth, requireTenantAccess, upload.single("file"), async (req: AuthRequest, res) => {
   try {
     const user = req.user!;
     const schoolId = user.schoolId ?? null;
@@ -106,15 +117,34 @@ router.post("/logo", requireAuth, requireTenantAccess, async (req: AuthRequest, 
       return res.status(403).json({ message: "Not allowed" });
     }
 
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    if (!ensureImageMime(req.file.mimetype)) {
+      return res.status(400).json({ message: "Invalid image type" });
+    }
+
     if (!validateTenantAccess(schoolId, req.user!.schoolId!)) {
       return res.status(403).json({ message: "Cross-tenant access denied" });
     }
 
-    // This would need to be integrated with the upload route
-    // For now, return a placeholder response
+    const stored = await storeAsset(
+      "school_logo",
+      req.file.buffer,
+      req.file.mimetype,
+      req.file.originalname,
+      req.user?.id,
+      schoolId
+    );
+
+    const updatedBranding = await SchoolBrandingService.getSchoolBranding(schoolId);
+    const css = updatedBranding ? SchoolBrandingService.getBrandingCSS(updatedBranding) : "";
+
     return res.json({
-      message: "Logo upload should be handled via /api/upload/school-logo endpoint",
-      note: "Use the smart storage service for logo uploads"
+      message: "School logo updated successfully",
+      storage: stored,
+      branding: updatedBranding,
+      css,
     });
   } catch (error) {
     console.error('Error uploading school logo:', error);

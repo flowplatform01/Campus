@@ -216,7 +216,7 @@ router.post("/link-student", requireAuth, requireTenantAccess, async (req: AuthR
       .set({
         metadata: sql`${users.metadata} || jsonb_build_object('parentLinkedAt', NOW())`
       })
-      .where(eq(users.id, childId));
+      .where(and(eq(users.id, childId), eq(users.schoolId, schoolId)));
     
     res.status(201).json({
       message: "Parent successfully linked to student",

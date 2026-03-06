@@ -1,192 +1,248 @@
-Great progress so far — many modules are now working well (e.g., promotions improvements, general flow stability). However, several critical data integrity, admin visibility, and backend stability issues remain. This phase should focus on data correctness, system stability, and performance maturity.
+**ROLE:**
+You are acting as a **Senior Software Engineer, QA Engineer, and Academic Systems Auditor** tasked with performing a **full simulation, testing, and improvement cycle** of a School Management System / School ERP application.
 
-This is a stabilization and refinement milestone.
+---
 
-⸻
+## PRIMARY OBJECTIVE
 
-1. Applications Showing N/A in School/Admin Dashboards (Critical)
+Simulate **two complete academic years** of realistic school operations in order to **fully test, validate, and improve** the system so that it becomes a **production-ready, stable, and high-performance School Management System (ERP).**
 
-Problem
+The goal is to **identify bugs, missing logic, workflow gaps, scalability issues, or structural weaknesses**, and **fix or improve them** where necessary.
 
-When students or employees submit applications:
- • Data successfully submits from the app.
- • But in school dashboards (admin side), fields display:
- • N/A
- • Not available
- • Even though users filled in the data correctly.
+---
 
-Additional Symptoms
- • Applicant counts show incorrect values:
- • Dashboards showing 0 despite real submissions.
- • “View Info” or details sometimes fail to load.
+# 1. FULL ACADEMIC SIMULATION
 
-Likely Issue Areas
- • Broken data mapping between:
- • User account → application record
- • Application → school dashboard
- • Serialization or API transformation issues.
+You must **create and simulate two complete academic years** with realistic school data and workflows.
 
-Task
- • Audit the full application data pipeline:
- • Submission payload
- • Database storage
- • Admin dashboard queries
- • Ensure:
- • Correct relational mapping
- • Accurate aggregation counts
- • Proper detail rendering
+Each academic year must contain:
 
-⸻
+### Academic Structure
 
-2. Admin Enrollment Module Audit
+* Academic Years
+* Terms / Semesters
+* Classes / Grade Levels
+* Streams or Sections
+* Subjects
+* Timetables
 
-The admin enrollment system must be deeply verified.
+### Student Management
 
-Requirements
- • Ensure enrollment settings actually work.
- • Validate:
- • Application approval flows
- • Admin actions
- • Visibility logic
- • Fix all N/A issues across:
- • School admin panel
- • Global admin panel (if present)
+* Student Admissions
+* Student Profiles
+* Student Class Assignments
+* Student Attendance
+* Student Discipline Records
+* Student Transfers / Promotions
 
-Goal: A reliable, fully functional enrollment management system.
+### Academic Activities
 
-⸻
+Simulate full academic operations including:
 
-3. Payments Module Stability (High Priority)
+* Daily attendance
+* Teacher lesson schedules
+* Assignments
+* Homework
+* Class tests
+* Continuous Assessments (CA)
+* Mid-term exams
+* End-of-term exams
+* End-of-year exams
+* Grading
+* Result processing
 
-This module appears unstable and may be causing backend crashes.
+### Reports
 
-Current Issues
- • Selecting class → student loading is:
- • Slow
- • Broken
- • Sometimes empty
- • Backend crashes during payment flows.
- • Invoice history shows:
- • Zero invoices even when created.
+Generate realistic outputs such as:
 
-Required Actions
- • Audit payment pipeline end-to-end:
- • Class → student linking
- • Invoice creation
- • Invoice retrieval queries
- • Identify crash triggers.
- • Fix root backend instability.
- • Ensure:
- • Reliable invoice persistence
- • Accurate invoice history
- • No crashes during payments
+* Student report cards
+* Term results
+* Annual results
+* Performance analytics
+* Class ranking
+* Subject averages
+* Attendance reports
 
-This is a critical reliability fix.
+---
 
-⸻
+# 2. STAFF & SYSTEM MANAGEMENT
 
-4. Smart Caching + Offline Performance
+Simulate realistic system usage including:
 
-The app needs stronger performance architecture.
+### Staff
 
-Requirements
+Create and simulate:
 
-Implement:
- • Smart caching strategies
- • IndexedDB or equivalent client storage
- • Efficient API caching layers
+* Teachers
+* School administrators
+* Bursar / finance staff
+* System administrators
 
-Goals
- • Faster loading
- • Reduced backend load
- • Better reliability in weak networks
- • Improved perceived performance
+### Permissions & Roles
 
-⸻
+Test:
 
-5. Promotions Module Enhancements
+* Role-based permissions
+* Access control
+* Staff dashboards
+* Staff activities
 
-Promotions are working well but need refinement.
+---
 
-Improvements Needed
- • Support both:
- • Manual promotions
- • Automated promotions
+# 3. SYSTEM MODULES TO TEST
 
-Automation Logic
- • Auto-promote students at academic year end if:
- • Next academic year exists
- • Student meets promotion criteria
+Ensure the following modules are **fully exercised and validated**:
 
-Manual Flexibility
+* Admissions
+* Academics
+* Attendance
+* Examination system
+* Results & grading
+* Staff management
+* Roles & permissions
+* School branding
+* Configuration settings
+* Notifications (if present)
+* Dashboard analytics
 
-Add:
- • Promote entire class
- • Promote selected students within a class
- • Smart student search (for large datasets)
- • Ability to move:
- • Individual students across classes or academic years
+All modules must be **actively used during the simulation** to reveal hidden issues.
 
-Goal: Smart, flexible promotion workflows.
+---
 
-⸻
+# 4. DEEP SYSTEM TESTING
 
-6. Data Accuracy + Smart System Behavior
+During the two-year simulation you must:
 
-The system should behave like a mature ERP:
- • Strong relational integrity
- • Accurate dashboards
- • Real-time reflection of user actions
- • Smart automation with manual overrides
+1. Stress test workflows
+2. Detect logical errors
+3. Detect broken UI flows
+4. Detect missing validations
+5. Detect inefficient database queries
+6. Detect slow endpoints
+7. Detect inconsistent data handling
+8. Detect scalability limitations
 
-Avoid fragile or partially linked flows.
+Where problems exist:
 
-⸻
+* Fix them
+* Improve the architecture
+* Improve performance
+* Improve reliability
 
-7. General System Hardening
+Your goal is to ensure the system becomes:
 
-Focus on making the app:
- • Stable under load
- • Crash-resistant
- • Data-consistent
- • Fast and responsive
+**Complete
+Robust
+Scalable
+Efficient
+Production-ready**
 
-Ensure:
- • No silent failures
- • No ghost data (e.g., invoices missing)
- • No placeholder values (N/A when data exists)
+---
 
-⸻
+# 5. SYSTEM IMPROVEMENT
 
-Execution Instructions
- • Perform a deep system audit across:
- • Applications
- • Admin dashboards
- • Payments
- • Promotions
- • Performance layers
- • Fix root causes, not surface symptoms.
- • Avoid regressions in already working modules.
+While testing, proactively identify:
 
-⸻
+* Missing features
+* Weak workflows
+* UI/UX confusion
+* Security weaknesses
+* Performance bottlenecks
+* Incomplete ERP capabilities
 
-Tone & Direction
+Then:
 
-You’ve made strong progress — now this phase is about:
- • Stability
- • Data correctness
- • Performance maturity
- • ERP-level reliability
+* Suggest improvements
+* Implement improvements where possible
+* Optimize backend logic
+* Improve frontend responsiveness
+* Improve API performance
 
-⸻
+The final system should behave like a **full professional School ERP platform**.
 
-Final Goal
+---
 
-Deliver a robust, intelligent school ERP that is:
- • Stable and crash-free
- • Data-accurate across dashboards
- • Fast and optimized with smart caching
- • Reliable in payments and enrollment
- • Flexible with smart automation
+# 6. IMPORTANT DOCUMENT REVIEW
 
-This should feel like a production-grade, scalable platform.
+Before beginning the simulation, carefully review the file:
+
+`attached_assets/V1.5 MASTER PROMT.md`
+
+This document contains **important architectural instructions**.
+Pay special attention to the **critical sections** in that file.
+
+---
+
+# 7. FINAL APPLICATION PREVIEW & RUNTIME TESTING
+
+After completing simulation and improvements:
+
+### Launch the Application
+
+You must:
+
+1. Start the **backend server**
+2. Start the **frontend client**
+
+### Respect Environment Ports
+
+Use the ports defined inside each `.env` file.
+
+Example:
+
+* Backend → from backend `.env`
+* Frontend → from frontend `.env`
+
+Do **NOT** change them.
+
+### Port Handling
+
+Before launching:
+
+* Detect if required ports are already in use
+* Kill any process occupying those ports
+* Free the ports
+* Then launch the application
+
+---
+
+# 8. VISUAL PREVIEW REQUIREMENT
+
+After launching:
+
+You must **preview both environments separately**:
+
+1. Backend server running
+2. Frontend client running
+
+Confirm:
+
+* Frontend successfully communicates with backend APIs
+* All endpoints function correctly
+* Authentication flows work
+* Data loads correctly
+* Dashboards display correct simulated data
+
+I must be able to **physically see the application preview running**.
+
+---
+
+# 9. FINAL VALIDATION
+
+Before completion verify:
+
+* System stability
+* Data integrity
+* Fast response times
+* Clean UI rendering
+* No runtime errors
+* Successful frontend ↔ backend communication
+* Fully working ERP workflows
+
+---
+
+# FINAL GOAL
+
+Transform this application into a **complete, reliable, and production-ready School Management System / School ERP** after the two-year academic simulation and full system validation.
+
+Take your time and perform **deep, careful, and intelligent testing.**

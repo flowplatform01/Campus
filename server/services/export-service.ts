@@ -1,4 +1,4 @@
-import { eq, and, desc, isNotNull } from "drizzle-orm";
+import { eq, and, desc, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db.js";
 import PDFDocument from "pdfkit";
 import { PassThrough } from "stream";
@@ -8,6 +8,8 @@ import {
   smsAssignmentSubmissions,
   smsAttendanceSessions,
   smsAttendanceEntries,
+  smsExamMarks,
+  smsExams,
   academicYears,
   academicTerms,
   schoolClasses,
@@ -15,7 +17,8 @@ import {
   subjects,
   studentEnrollments,
   users,
-  schools
+  schools,
+  smsGradeScales,
 } from "@shared/schema";
 
 // PDF Generation
@@ -159,6 +162,36 @@ function renderStudentReportPdf(doc: PDFKit.PDFDocument, data: any) {
     );
     if (doc.y > 740) doc.addPage();
   }
+
+  const examMarks: any[] = Array.isArray(data?.examMarks) ? data.examMarks : [];
+  if (examMarks.length > 0) {
+    doc.moveDown(1);
+    doc.fontSize(12).text("Exams", { underline: true });
+    doc.moveDown(0.4);
+
+    const examCols = [
+      { label: "Exam", width: 160 },
+      { label: "Subject", width: 160 },
+      { label: "Marks", width: 70 },
+      { label: "%", width: 50 },
+      { label: "Grade", width: 60 },
+    ];
+    drawTableHeader(doc, examCols);
+
+    for (const m of examMarks) {
+      const obtained = typeof m?.marksObtained === "number" ? m.marksObtained : null;
+      const total = typeof m?.totalMarks === "number" ? m.totalMarks : null;
+      const pct = typeof obtained === "number" && typeof total === "number" && total > 0 ? ((obtained / total) * 100).toFixed(1) : "";
+      drawTableRow(doc, examCols, [
+        String(m?.examName ?? ""),
+        String(m?.subjectName ?? ""),
+        obtained === null || total === null ? "" : `${obtained}/${total}`,
+        pct,
+        String(m?.grade ?? ""),
+      ]);
+      if (doc.y > 740) doc.addPage();
+    }
+  }
 }
 
 function renderClassReportPdf(doc: PDFKit.PDFDocument, data: any) {
@@ -232,7 +265,13 @@ export async function generateExcelReport(data: any[], type: string): Promise<Bu
 }
 
 // Generate Academic Report for Student
-export async function generateStudentReport(schoolId: string, studentId: string, academicYearId?: string, termId?: string) {
+export async function generateStudentReport(
+  schoolId: string,
+  studentId: string,
+  academicYearId?: string,
+  termId?: string,
+  examId?: string
+) {
   try {
     // Get student info
     const [student] = await db
@@ -341,11 +380,56 @@ export async function generateStudentReport(schoolId: string, studentId: string,
     const attendanceRate = attendance.length > 0 ? (presentDays / attendance.length * 100) : 0;
     const remark = generateAutoRemark(avgScore, attendanceRate);
 
+    // Exam marks (optional scope)
+    const examMarks = examId
+      ? await db
+          .select({
+            examId: smsExams.id,
+            examName: smsExams.name,
+            subjectName: subjects.name,
+            marksObtained: smsExamMarks.marksObtained,
+            totalMarks: smsExamMarks.totalMarks,
+            percentage: sql<number>`CASE WHEN ${smsExamMarks.totalMarks} > 0 THEN (${smsExamMarks.marksObtained}::float / ${smsExamMarks.totalMarks}::float * 100) ELSE 0 END`,
+          })
+          .from(smsExamMarks)
+          .innerJoin(smsExams, eq(smsExams.id, smsExamMarks.examId))
+          .innerJoin(subjects, eq(subjects.id, smsExamMarks.subjectId))
+          .where(
+            and(
+              eq(smsExams.schoolId, schoolId),
+              eq(subjects.schoolId, schoolId),
+              eq(smsExamMarks.studentId, studentId),
+              eq(smsExamMarks.examId, examId)
+            )
+          )
+      : [];
+
+    // Use school-specific grade scales when configured, with a safe fallback
+    const gradeScales = await db
+      .select()
+      .from(smsGradeScales)
+      .where(eq(smsGradeScales.schoolId, schoolId))
+      .orderBy(smsGradeScales.minPercentage);
+
+    const mapWithScale = (pct: number): string => {
+      const p = Number(pct);
+      if (!Number.isFinite(p)) return "";
+      const scale = gradeScales.find((row) => p >= row.minPercentage && p <= row.maxPercentage);
+      if (scale) return scale.grade;
+      return mapPercentageToGrade(p);
+    };
+
+    const examMarksWithGrade = examMarks.map((m: any) => ({
+      ...m,
+      grade: typeof m?.percentage === "number" ? mapWithScale(m.percentage) : "",
+    }));
+
     return {
       student,
       enrollment,
       assignments,
       attendance,
+      examMarks: examMarksWithGrade,
       summary: {
         totalAssignments: assignments.length,
         submittedAssignments: assignments.filter(a => a.submission).length,
@@ -353,6 +437,12 @@ export async function generateStudentReport(schoolId: string, studentId: string,
         totalAttendanceDays: attendance.length,
         presentDays,
         attendanceRate: attendanceRate.toFixed(1),
+        examAverage: examMarksWithGrade.length > 0
+          ? (
+              examMarksWithGrade.reduce((acc: number, r: any) => acc + (Number(r.percentage) || 0), 0) /
+              examMarksWithGrade.length
+            ).toFixed(1)
+          : null,
         remark
       }
     };
@@ -363,7 +453,13 @@ export async function generateStudentReport(schoolId: string, studentId: string,
 }
 
 // Generate Class Performance Report
-export async function generateClassReport(schoolId: string, classId: string, academicYearId?: string, termId?: string) {
+export async function generateClassReport(
+  schoolId: string,
+  classId: string,
+  academicYearId?: string,
+  termId?: string,
+  examId?: string
+) {
   try {
     // Get all students in class
     const students = await db
@@ -395,7 +491,7 @@ export async function generateClassReport(schoolId: string, classId: string, aca
           .select({
             assignment: smsAssignments.title,
             maxScore: smsAssignments.maxScore,
-            submission: smsAssignmentSubmissions.score,
+            score: smsAssignmentSubmissions.score,
           })
           .from(smsAssignmentSubmissions)
           .innerJoin(smsAssignments, eq(smsAssignmentSubmissions.assignmentId, smsAssignments.id))
@@ -411,26 +507,56 @@ export async function generateClassReport(schoolId: string, classId: string, aca
             )
           );
 
-        const averageScore = assignments.length > 0 ? 
-          assignments.reduce((sum, a: any) => sum + (a.score || 0), 0) / assignments.length : 0;
+        const scores = assignments.map((a: any) => (typeof a.score === "number" ? a.score : 0));
+        const averageScore = scores.length > 0
+          ? scores.reduce((sum: number, v: number) => sum + v, 0) / scores.length
+          : 0;
+
+        const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
+        const lowestScore = scores.length > 0 ? Math.min(...scores) : 0;
+
+        const examRows = examId
+          ? await db
+              .select({
+                percentage: sql<number>`CASE WHEN ${smsExamMarks.totalMarks} > 0 THEN (${smsExamMarks.marksObtained}::float / ${smsExamMarks.totalMarks}::float * 100) ELSE 0 END`,
+              })
+              .from(smsExamMarks)
+              .innerJoin(smsExams, eq(smsExams.id, smsExamMarks.examId))
+              .where(
+                and(
+                  eq(smsExams.schoolId, schoolId),
+                  eq(smsExamMarks.studentId, studentData.enrollment.studentId),
+                  eq(smsExamMarks.examId, examId)
+                )
+              )
+          : [];
+
+        const examAverage = examRows.length > 0
+          ? examRows.reduce((acc: number, r: any) => acc + (Number(r.percentage) || 0), 0) / examRows.length
+          : null;
 
         return {
           ...studentData,
           totalAssignments: assignments.length,
           submittedAssignments: assignments.length,
           averageScore: averageScore.toFixed(2),
-          highestScore: Math.max(...assignments.map((a: any) => a.score || 0)),
-          lowestScore: Math.min(...assignments.map((a: any) => a.score || 0)),
+          highestScore,
+          lowestScore,
+          examAverage: examAverage != null ? Number(examAverage.toFixed(2)) : null,
         };
       })
     );
+
+    const classAverage = performanceData.length > 0
+      ? performanceData.reduce((sum, s: any) => sum + (parseFloat(String(s.averageScore)) || 0), 0) / performanceData.length
+      : 0;
 
     return {
       classId,
       students: performanceData,
       summary: {
         totalStudents: students.length,
-        classAverage: performanceData.reduce((sum, s: any) => sum + parseFloat(s.averageScore), 0) / students.length,
+        classAverage,
         topPerformer: performanceData.reduce((top: any, current: any) => 
           parseFloat(top.averageScore) > parseFloat(current.averageScore) ? top : current, performanceData[0] || {}),
         needsImprovement: performanceData.filter(s => parseFloat(s.averageScore) < 60).length,
@@ -440,6 +566,15 @@ export async function generateClassReport(schoolId: string, classId: string, aca
     console.error('Error generating class report:', error);
     throw error;
   }
+}
+
+function mapPercentageToGrade(pct: number): string {
+  const p = Number(pct) || 0;
+  if (p >= 90) return "A";
+  if (p >= 80) return "B";
+  if (p >= 70) return "C";
+  if (p >= 60) return "D";
+  return "F";
 }
 
 // Generate Attendance Summary Report

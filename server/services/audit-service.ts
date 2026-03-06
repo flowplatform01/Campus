@@ -8,6 +8,7 @@ export type AuditAction =
   | "payment_edit"
   | "report_generate"
   | "report_export"
+  | "export_assignments_csv"
   | "promotion_decision"
   | "admin_override"
   | "invoice_create"

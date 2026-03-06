@@ -692,6 +692,23 @@ router.get("/attendance/sessions", requireAuth, requireTenantAccess, async (req:
     const subjectId = req.query.subjectId as string | undefined;
     const date = req.query.date as string | undefined;
 
+    if (user.role === "employee") {
+      if (!academicYearId || !classId || !subjectId) {
+        return res.status(400).json({ message: "academicYearId, classId and subjectId are required" });
+      }
+      const allowed = await ensureTeacherAttendanceAccess({
+        user,
+        schoolId,
+        academicYearId,
+        classId,
+        sectionId: (req.query.sectionId as string | undefined) ?? null,
+        subjectId,
+      });
+      if (!allowed) {
+        return res.status(403).json({ message: "Not authorized to access attendance for this subject/class" });
+      }
+    }
+
     const conditions = [eq(smsAttendanceSessions.schoolId, schoolId)];
     if (academicYearId) conditions.push(eq(smsAttendanceSessions.academicYearId, academicYearId));
     if (classId) conditions.push(eq(smsAttendanceSessions.classId, classId));
@@ -768,6 +785,20 @@ router.get("/attendance/sessions/:id/entries", requireAuth, requireTenantAccess,
 
     if (!session) {
       return res.status(404).json({ message: "Attendance session not found" });
+    }
+
+    if (user.role === "employee") {
+      const allowed = await ensureTeacherAttendanceAccess({
+        user,
+        schoolId,
+        academicYearId: session.academicYearId,
+        classId: session.classId,
+        sectionId: session.sectionId ?? null,
+        subjectId: session.subjectId ?? "",
+      });
+      if (!session.subjectId || !allowed) {
+        return res.status(403).json({ message: "Not authorized to access attendance for this subject/class" });
+      }
     }
 
     let query = db
@@ -1283,7 +1314,7 @@ router.patch("/payments/settings", requireAuth, requireTenantAccess, async (req:
           await db
             .update(smsPaymentSettings)
             .set({ ...body, updatedAt: now })
-            .where(eq(smsPaymentSettings.id, existing.id))
+            .where(and(eq(smsPaymentSettings.id, existing.id), eq(smsPaymentSettings.schoolId, schoolId)))
             .returning(returningCols)
         )[0]
       : (
@@ -2366,7 +2397,7 @@ router.post("/timetable/publish", requireAuth, requireTenantAccess, async (req: 
           publishedBy: req.user!.id,
           updatedAt: new Date(),
         })
-        .where(eq(timetablePublications.id, existing.id))
+        .where(and(eq(timetablePublications.id, existing.id), eq(timetablePublications.schoolId, schoolId)))
         .returning();
     } else {
       [row] = await db
@@ -3212,8 +3243,23 @@ router.post("/admissions/:id/approve", requireAuth, requireTenantAccess, async (
     const studentEmail = adm.studentEmail || `student.${adm.id}@pending.local`;
     const parentEmail = adm.parentEmail || `parent.${adm.id}@pending.local`;
 
-    const [existingStudentByEmail] = await db.select().from(users).where(eq(users.email, studentEmail)).limit(1);
-    const [existingParentByEmail] = await db.select().from(users).where(eq(users.email, parentEmail)).limit(1);
+    const [existingStudentByEmail] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, studentEmail))
+      .limit(1);
+    const [existingParentByEmail] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, parentEmail))
+      .limit(1);
+
+    if (existingStudentByEmail && existingStudentByEmail.schoolId && existingStudentByEmail.schoolId !== schoolId) {
+      return res.status(409).json({ message: "Student email is already used by another school" });
+    }
+    if (existingParentByEmail && existingParentByEmail.schoolId && existingParentByEmail.schoolId !== schoolId) {
+      return res.status(409).json({ message: "Parent email is already used by another school" });
+    }
 
     const studentPassword = randomTempPassword();
     const parentPassword = randomTempPassword();
@@ -3471,7 +3517,7 @@ router.post("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: Au
             gradedBy: user.id,
             updatedAt: new Date(),
           })
-          .where(eq(smsExamMarks.id, existing.id))
+          .where(and(eq(smsExamMarks.id, existing.id), eq(smsExamMarks.examId, examId)))
           .returning()
       : await db
           .insert(smsExamMarks)
@@ -3979,6 +4025,16 @@ const promoteStudentsSchema = z.object({
   currentClassId: z.string().min(1),
   nextClassId: z.string().min(1),
   studentIds: z.array(z.string().min(1)),
+}).superRefine((val, ctx) => {
+  if (val.currentAcademicYearId === val.nextAcademicYearId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "currentAcademicYearId and nextAcademicYearId must be different", path: ["nextAcademicYearId"] });
+  }
+  if (val.currentClassId === val.nextClassId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "currentClassId and nextClassId must be different", path: ["nextClassId"] });
+  }
+  if (val.studentIds.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "studentIds must not be empty", path: ["studentIds"] });
+  }
 });
 
 router.post("/students/promote", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
@@ -3986,27 +4042,83 @@ router.post("/students/promote", requireAuth, requireTenantAccess, async (req: A
   if (!schoolId) return;
   const body = promoteStudentsSchema.parse(req.body);
 
-  const results = [];
-  for (const studentId of body.studentIds) {
-    // 1. Mark current enrollment as promoted
-    await db.update(studentEnrollments)
-      .set({ status: "promoted", updatedAt: new Date() })
-      .where(and(
-        eq(studentEnrollments.studentId, studentId),
-        eq(studentEnrollments.academicYearId, body.currentAcademicYearId),
-        eq(studentEnrollments.schoolId, schoolId)
-      ));
+  const uniqueStudentIds = Array.from(new Set(body.studentIds));
 
-    // 2. Create new enrollment for next year
-    const [newEnrollment] = await db.insert(studentEnrollments).values({
-      schoolId,
-      academicYearId: body.nextAcademicYearId,
-      studentId,
-      classId: body.nextClassId,
-      status: "active",
-    }).returning();
-    
-    results.push(newEnrollment);
+  const results: Array<{
+    studentId: string;
+    status: "promoted" | "skipped" | "error";
+    reason?: string;
+    enrollment?: any;
+  }> = [];
+
+  for (const studentId of uniqueStudentIds) {
+    try {
+      const out = await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(studentEnrollments)
+          .where(
+            and(
+              eq(studentEnrollments.schoolId, schoolId),
+              eq(studentEnrollments.studentId, studentId),
+              eq(studentEnrollments.academicYearId, body.currentAcademicYearId),
+              eq(studentEnrollments.classId, body.currentClassId)
+            )
+          )
+          .limit(1);
+
+        if (!current) {
+          return { status: "skipped" as const, reason: "No matching current enrollment" };
+        }
+        if (current.status !== "active") {
+          return { status: "skipped" as const, reason: `Current enrollment is not active (${current.status})` };
+        }
+
+        const [existingNext] = await tx
+          .select({ id: studentEnrollments.id })
+          .from(studentEnrollments)
+          .where(
+            and(
+              eq(studentEnrollments.schoolId, schoolId),
+              eq(studentEnrollments.studentId, studentId),
+              eq(studentEnrollments.academicYearId, body.nextAcademicYearId)
+            )
+          )
+          .limit(1);
+        if (existingNext) {
+          return { status: "skipped" as const, reason: "Student already has an enrollment in next academic year" };
+        }
+
+        await tx
+          .update(studentEnrollments)
+          .set({ status: "promoted", updatedAt: new Date() })
+          .where(and(eq(studentEnrollments.id, current.id), eq(studentEnrollments.schoolId, schoolId)));
+
+        const [newEnrollment] = await tx
+          .insert(studentEnrollments)
+          .values({
+            schoolId,
+            academicYearId: body.nextAcademicYearId,
+            termId: null,
+            studentId,
+            classId: body.nextClassId,
+            sectionId: null,
+            status: "active",
+          })
+          .returning();
+
+        if (!newEnrollment) {
+          throw new Error("Failed to create next-year enrollment");
+        }
+
+        return { status: "promoted" as const, enrollment: newEnrollment };
+      });
+
+      results.push({ studentId, ...out });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      results.push({ studentId, status: "error", reason: msg });
+    }
   }
 
   await logAudit({
@@ -4014,10 +4126,22 @@ router.post("/students/promote", requireAuth, requireTenantAccess, async (req: A
     entityType: "enrollment",
     actorId: req.user!.id,
     schoolId,
-    meta: { studentCount: results.length, currentYear: body.currentAcademicYearId, nextYear: body.nextAcademicYearId },
+    meta: {
+      studentCount: results.length,
+      promotedCount: results.filter((r) => r.status === "promoted").length,
+      skippedCount: results.filter((r) => r.status === "skipped").length,
+      errorCount: results.filter((r) => r.status === "error").length,
+      currentAcademicYearId: body.currentAcademicYearId,
+      nextAcademicYearId: body.nextAcademicYearId,
+      currentClassId: body.currentClassId,
+      nextClassId: body.nextClassId,
+    },
   });
 
-  return res.json({ message: `Successfully promoted ${results.length} students`, enrollments: results });
+  return res.json({
+    message: `Promotion completed`,
+    results,
+  });
 });
 
 // ============ Student Enrollments ============
@@ -4824,7 +4948,7 @@ router.post("/parent/apply-for-child", requireAuth, async (req: AuthRequest, res
     const [childUser] = await db
       .select()
       .from(users)
-      .where(eq(users.id, body.childId))
+      .where(and(eq(users.id, body.childId), eq(users.role, "student")))
       .limit(1);
     
     if (!childUser) {
@@ -5801,7 +5925,7 @@ router.post("/achievements/award", requireAuth, requireTenantAccess, async (req:
           points: currentPoints + achievementPoints,
           updatedAt: new Date()
         })
-        .where(eq(users.id, body.studentId));
+        .where(and(eq(users.id, body.studentId), eq(users.schoolId, user.schoolId!)));
       
       // Update student badges
       const currentBadges = (student.badges as string[]) || [];
@@ -5811,7 +5935,7 @@ router.post("/achievements/award", requireAuth, requireTenantAccess, async (req:
           badges: newBadges,
           updatedAt: new Date()
         })
-        .where(eq(users.id, body.studentId));
+        .where(and(eq(users.id, body.studentId), eq(users.schoolId, user.schoolId!)));
     });
     
     return res.json({
