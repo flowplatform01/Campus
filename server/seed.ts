@@ -471,7 +471,8 @@ async function main() {
       return d;
     });
 
-    for (const [index, sessionDate] of sessionDates.entries()) {
+    for (let index = 0; index < sessionDates.length; index++) {
+      const sessionDate = sessionDates[index]!;
       const [existingSession] = await db
         .select()
         .from(smsAttendanceSessions)

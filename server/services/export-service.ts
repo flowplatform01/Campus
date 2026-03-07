@@ -1,4 +1,4 @@
-import { eq, and, desc, isNotNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNotNull, sql, or, isNull } from "drizzle-orm";
 import { db } from "../db.js";
 import PDFDocument from "pdfkit";
 import { PassThrough } from "stream";
@@ -85,18 +85,32 @@ function renderKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {
 }
 
 function drawTableHeader(doc: PDFKit.PDFDocument, cols: { label: string; width: number }[]) {
-  const startX = doc.x;
+  const startX = doc.page.margins.left;
   const y = doc.y;
+  const totalWidth = cols.reduce((s, c) => s + c.width, 0);
+  const rowHeight = 14;
+
   doc.fontSize(9).fillColor("#111");
   let x = startX;
   for (const c of cols) {
-    doc.text(c.label, x, y, { width: c.width, continued: false });
+    // pdfkit mutates internal cursor when drawing text; freeze it per cell for stable columns.
+    const prevX = doc.x;
+    const prevY = doc.y;
+    doc.text(String(c.label ?? ""), x, y, { width: c.width, height: rowHeight, align: "left", lineBreak: false });
+    doc.x = prevX;
+    doc.y = prevY;
     x += c.width;
   }
-  doc.moveDown(0.6);
-  doc.moveTo(startX, doc.y).lineTo(startX + cols.reduce((s, c) => s + c.width, 0), doc.y).strokeColor("#ccc").stroke();
-  doc.moveDown(0.4);
+
+  const lineY = y + rowHeight;
+  doc.moveTo(startX, lineY)
+    .lineTo(startX + totalWidth, lineY)
+    .strokeColor("#ccc")
+    .stroke();
+
   doc.strokeColor("#000");
+  doc.y = lineY + 6;
+  doc.x = startX;
 }
 
 function drawTableRow(
@@ -104,16 +118,24 @@ function drawTableRow(
   cols: { width: number }[],
   values: string[]
 ) {
-  const startX = doc.x;
+  const startX = doc.page.margins.left;
   const y = doc.y;
+  const rowHeight = 14;
+
   let x = startX;
   doc.fontSize(9).fillColor("#333");
   for (let i = 0; i < cols.length; i++) {
-    doc.text(values[i] ?? "", x, y, { width: cols[i]!.width });
+    const prevX = doc.x;
+    const prevY = doc.y;
+    doc.text(String(values[i] ?? ""), x, y, { width: cols[i]!.width, height: rowHeight, align: "left", lineBreak: false });
+    doc.x = prevX;
+    doc.y = prevY;
     x += cols[i]!.width;
   }
-  doc.moveDown(0.6);
+
   doc.fillColor("#111");
+  doc.y = y + rowHeight;
+  doc.x = startX;
 }
 
 function renderStudentReportPdf(doc: PDFKit.PDFDocument, data: any) {
@@ -380,29 +402,29 @@ export async function generateStudentReport(
     const attendanceRate = attendance.length > 0 ? (presentDays / attendance.length * 100) : 0;
     const remark = generateAutoRemark(avgScore, attendanceRate);
 
-    // Exam marks (optional scope)
-    const examMarks = examId
-      ? await db
-          .select({
-            examId: smsExams.id,
-            examName: smsExams.name,
-            subjectName: subjects.name,
-            marksObtained: smsExamMarks.marksObtained,
-            totalMarks: smsExamMarks.totalMarks,
-            percentage: sql<number>`CASE WHEN ${smsExamMarks.totalMarks} > 0 THEN (${smsExamMarks.marksObtained}::float / ${smsExamMarks.totalMarks}::float * 100) ELSE 0 END`,
-          })
-          .from(smsExamMarks)
-          .innerJoin(smsExams, eq(smsExams.id, smsExamMarks.examId))
-          .innerJoin(subjects, eq(subjects.id, smsExamMarks.subjectId))
-          .where(
-            and(
-              eq(smsExams.schoolId, schoolId),
-              eq(subjects.schoolId, schoolId),
-              eq(smsExamMarks.studentId, studentId),
-              eq(smsExamMarks.examId, examId)
-            )
-          )
-      : [];
+    // Exam marks: if examId is not provided ("All / none"), include all marks in the year/term scope.
+    const examMarks = await db
+      .select({
+        examId: smsExams.id,
+        examName: smsExams.name,
+        subjectName: subjects.name,
+        marksObtained: smsExamMarks.marksObtained,
+        totalMarks: smsExamMarks.totalMarks,
+        percentage: sql<number>`CASE WHEN ${smsExamMarks.totalMarks} > 0 THEN (${smsExamMarks.marksObtained}::float / ${smsExamMarks.totalMarks}::float * 100) ELSE 0 END`,
+      })
+      .from(smsExamMarks)
+      .innerJoin(smsExams, eq(smsExams.id, smsExamMarks.examId))
+      .innerJoin(subjects, eq(subjects.id, smsExamMarks.subjectId))
+      .where(
+        and(
+          eq(smsExams.schoolId, schoolId),
+          eq(subjects.schoolId, schoolId),
+          eq(smsExamMarks.studentId, studentId),
+          eq(smsExams.academicYearId, effectiveAcademicYearId),
+          effectiveTermId ? eq(smsExams.termId, effectiveTermId) : undefined,
+          examId ? eq(smsExamMarks.examId, examId) : undefined
+        )
+      );
 
     // Use school-specific grade scales when configured, with a safe fallback
     const gradeScales = await db
@@ -476,10 +498,10 @@ export async function generateClassReport(
       .where(
         and(
           eq(studentEnrollments.schoolId, schoolId),
-          eq(users.schoolId, schoolId),
           eq(studentEnrollments.classId, classId),
           academicYearId ? eq(studentEnrollments.academicYearId, academicYearId) : undefined,
-          termId ? eq(studentEnrollments.termId, termId) : undefined,
+          // IMPORTANT: termId is not reliably stored on enrollments and may not represent the selected report term.
+          // Roster should be year-scoped; termId will be applied to assignment/exam/attendance performance queries instead.
           eq(studentEnrollments.status, "active")
         )
       );
@@ -599,7 +621,16 @@ export async function generateAttendanceReport(schoolId: string, classId?: strin
       .innerJoin(smsAttendanceSessions, eq(smsAttendanceEntries.sessionId, smsAttendanceSessions.id))
       .innerJoin(subjects, eq(smsAttendanceSessions.subjectId, subjects.id))
       .innerJoin(users, eq(smsAttendanceEntries.studentId, users.id))
-      .innerJoin(studentEnrollments, eq(users.id, studentEnrollments.studentId))
+      // Join enrollments using schoolId + academicYearId to avoid mixing enrollments from other years.
+      .innerJoin(
+        studentEnrollments,
+        and(
+          eq(users.id, studentEnrollments.studentId),
+          eq(studentEnrollments.schoolId, schoolId),
+          eq(studentEnrollments.academicYearId, smsAttendanceSessions.academicYearId),
+          eq(studentEnrollments.status, "active")
+        )
+      )
       .innerJoin(schoolClasses, eq(studentEnrollments.classId, schoolClasses.id))
       .leftJoin(classSections, eq(studentEnrollments.sectionId, classSections.id))
       .where(
@@ -608,7 +639,6 @@ export async function generateAttendanceReport(schoolId: string, classId?: strin
           eq(smsAttendanceSessions.schoolId, schoolId),
           eq(subjects.schoolId, schoolId),
           eq(users.schoolId, schoolId),
-          eq(studentEnrollments.schoolId, schoolId),
           eq(schoolClasses.schoolId, schoolId),
           classId ? eq(studentEnrollments.classId, classId) : undefined,
           academicYearId ? eq(smsAttendanceSessions.academicYearId, academicYearId) : undefined,

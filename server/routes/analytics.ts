@@ -97,7 +97,7 @@ router.get("/dashboard", requireAuth, requireTenantAccess, async (req: AuthReque
       db.select({
         totalInvoices: sum(smsInvoices.totalAmount),
         totalPaid: sum(smsPayments.amount),
-        pendingAmount: sql`${smsInvoices.totalAmount} - COALESCE(SUM(${smsPayments.amount}), 0)`
+        pendingAmount: sql`COALESCE(SUM(${smsInvoices.totalAmount}), 0) - COALESCE(SUM(${smsPayments.amount}), 0)`
       }).from(smsInvoices)
         .leftJoin(smsPayments, eq(smsPayments.invoiceId, smsInvoices.id))
         .where(eq(smsInvoices.schoolId, schoolId)),

@@ -159,21 +159,9 @@ Then:
 * Improve API performance
 
 The final system should behave like a **full professional School ERP platform**.
-
 ---
 
-# 6. IMPORTANT DOCUMENT REVIEW
-
-Before beginning the simulation, carefully review the file:
-
-`attached_assets/V1.5 MASTER PROMT.md`
-
-This document contains **important architectural instructions**.
-Pay special attention to the **critical sections** in that file.
-
----
-
-# 7. FINAL APPLICATION PREVIEW & RUNTIME TESTING
+# 6. FINAL APPLICATION PREVIEW & RUNTIME TESTING
 
 After completing simulation and improvements:
 

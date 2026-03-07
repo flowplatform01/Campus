@@ -717,6 +717,38 @@ export const smsExpenses = pgTable("sms_expenses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const smsDisciplineRecords = pgTable("sms_discipline_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  studentId: varchar("student_id").references(() => users.id).notNull(),
+  academicYearId: varchar("academic_year_id").references(() => academicYears.id),
+  termId: varchar("term_id").references(() => academicTerms.id),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+  category: varchar("category", { length: 50 }).default("behavior").notNull(),
+  severity: varchar("severity", { length: 20 }).default("minor").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  actionTaken: text("action_taken"),
+  recordedBy: varchar("recorded_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const smsStudentTransfers = pgTable("sms_student_transfers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolId: varchar("school_id").references(() => schools.id).notNull(),
+  studentId: varchar("student_id").references(() => users.id).notNull(),
+  fromAcademicYearId: varchar("from_academic_year_id").references(() => academicYears.id),
+  toAcademicYearId: varchar("to_academic_year_id").references(() => academicYears.id),
+  fromClassId: varchar("from_class_id").references(() => schoolClasses.id),
+  toClassId: varchar("to_class_id").references(() => schoolClasses.id),
+  fromSectionId: varchar("from_section_id").references(() => classSections.id),
+  toSectionId: varchar("to_section_id").references(() => classSections.id),
+  transferDate: timestamp("transfer_date").defaultNow().notNull(),
+  reason: text("reason"),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ============ SMS (Staff Attendance) ============
 export const smsStaffAttendanceSessions = pgTable("sms_staff_attendance_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

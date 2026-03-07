@@ -460,7 +460,7 @@ router.post("/student/apply", requireAuth, async (req: AuthRequest, res) => {
   }
 
   // Prevent duplicate active applications for the same school/class
-  const existing = await db
+  const [existing] = await db
     .select({ id: enrollmentApplications.id, status: enrollmentApplications.status })
     .from(enrollmentApplications)
     .where(
@@ -561,7 +561,7 @@ router.post("/parent/apply-for-child", requireAuth, async (req: AuthRequest, res
   }
 
   // Prevent duplicate active parent-student applications for the same child/school/class
-  const existing = await db
+  const [existing] = await db
     .select({ id: enrollmentApplications.id, status: enrollmentApplications.status })
     .from(enrollmentApplications)
     .where(
@@ -633,7 +633,7 @@ router.post("/employee/apply", requireAuth, async (req: AuthRequest, res) => {
   }
 
   // Prevent duplicate active employee applications per school
-  const existing = await db
+  const [existing] = await db
     .select({ id: enrollmentApplications.id, status: enrollmentApplications.status })
     .from(enrollmentApplications)
     .where(

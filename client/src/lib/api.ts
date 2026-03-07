@@ -122,6 +122,79 @@ async function request<T>(
   return data as T;
 }
 
+export async function requestRaw(
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  let url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  if (API_BASE && path.startsWith("/")) {
+    url = `${API_BASE}${path}`;
+  }
+
+  const baseHeaders: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
+  };
+  if (options.body && !baseHeaders["Content-Type"] && !baseHeaders["content-type"]) {
+    baseHeaders["Content-Type"] = "application/json";
+  }
+
+  const token = getToken();
+
+  async function doFetch(withToken?: string | null) {
+    const nextHeaders: Record<string, string> = { ...baseHeaders };
+    if (withToken) {
+      nextHeaders["Authorization"] = `Bearer ${withToken}`;
+    } else {
+      delete nextHeaders["Authorization"];
+    }
+    return fetch(url, { ...options, headers: nextHeaders });
+  }
+
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    throw new Error("No internet connection. Please check your network and try again.");
+  }
+
+  let res: Response;
+  try {
+    res = await doFetch(token);
+  } catch {
+    throw new Error(typeof navigator !== "undefined" && !navigator.onLine
+      ? "No internet connection. Please check your network and try again."
+      : "Unable to reach server. Please try again.");
+  }
+
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed?.accessToken) {
+      try {
+        res = await doFetch(refreshed.accessToken);
+      } catch {
+        throw new Error("Unable to reach server");
+      }
+    }
+  }
+
+  if (!res.ok) {
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = (await res.json().catch(() => null)) as any;
+      const msg = typeof data?.message === "string" ? data.message : null;
+      throw new Error(msg || (res.status === 401
+        ? "Session expired. Please log in again."
+        : res.status === 403
+          ? "You don't have permission to do that."
+          : "Request failed. Please try again."));
+    }
+    throw new Error(res.status === 401
+      ? "Session expired. Please log in again."
+      : res.status === 403
+        ? "You don't have permission to do that."
+        : "Request failed. Please try again.");
+  }
+
+  return res;
+}
+
 export interface ApiUser {
   id: string;
   email: string;
