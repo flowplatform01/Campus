@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "../db.js";
@@ -198,7 +198,7 @@ router.get("/:id/info", requireAuth, requireTenantAccess, async (req: AuthReques
         .innerJoin(schoolClasses, eq(schoolClasses.id, studentEnrollments.classId))
         .leftJoin(classSections, eq(classSections.id, studentEnrollments.sectionId))
         .where(and(eq(studentEnrollments.schoolId, schoolId), eq(studentEnrollments.studentId, u.id)))
-        .orderBy(studentEnrollments.createdAt)
+        .orderBy(desc(studentEnrollments.createdAt))
         .limit(1);
 
       return res.json({ user: baseUser, related: { enrollment: enrollment ?? null } });

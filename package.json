@@ -14,12 +14,14 @@
     "start": "cross-env NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "seed": "cross-env NODE_ENV=development tsx ./server/seed.ts",
+    "simulate:two-years": "cross-env NODE_ENV=development tsx ./server/simulate-two-years.ts",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "test": "node api-tester.js",
     "test:health": "node -e \"import('./api-tester.js').then(m => new m.default().testAPIEndpoint('/api/health', 'GET', null, 200))\"",
     "test:auth": "node -e \"import('./api-tester.js').then(m => new m.default().runAllTests())\"",
     "test:api": "node -e \"import('./api-tester.js').then(m => new m.default().runAllTests())\"",
+    "test:lifecycle": "node scripts/lifecycle-runner.js",
     "v12-check": "node scripts/v12-production-check.js"
   },
   "dependencies": {

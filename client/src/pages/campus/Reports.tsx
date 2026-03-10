@@ -14,6 +14,7 @@ import {
 import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { ChevronDown, Settings2 } from 'lucide-react';
+import { requestRaw } from '@/lib/api';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -94,16 +95,11 @@ export default function CampusReportsPage() {
   }, [roster]);
 
   const openExport = (path: string) => {
-    const token = localStorage.getItem('campus_access_token');
     const sep = path.includes('?') ? '&' : '?';
     const opts = `${sep}autoRemarks=${reportConfig.autoRemarks}&showRanking=${reportConfig.showRanking}`;
     const url = `${API_BASE}${path}${opts}`;
-    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    requestRaw(url)
       .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error((data as any)?.message || 'Export failed');
-        }
         const blob = await res.blob();
         const objectUrl = URL.createObjectURL(blob);
         window.open(objectUrl, '_blank');

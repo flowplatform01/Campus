@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, desc, and, isNotNull } from "drizzle-orm";
+import { eq, desc, and, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db.js";
 import {
@@ -362,7 +362,9 @@ router.get("/schedule", requireAuth, requireTenantAccess, async (req: AuthReques
           eq(timetableSlots.academicYearId, publication.academicYearId),
           eq(timetableSlots.termId, publication.termId),
           eq(timetableSlots.classId, publication.classId),
-          sectionId ? eq(timetableSlots.sectionId, sectionId as string) : undefined
+          // IMPORTANT: Filter by the publication's section scope (including null section).
+          // Using req.query.sectionId can accidentally mix sections when sectionId is omitted.
+          publication.sectionId ? eq(timetableSlots.sectionId, publication.sectionId) : isNull(timetableSlots.sectionId)
         )
       )
       .orderBy(timetableSlots.weekday, timetableSlots.startTime);

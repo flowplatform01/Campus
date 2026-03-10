@@ -1,3 +1,13 @@
+Admin: sim-admin@campus.demo / Campus@12345
+Teacher: sim-teacher@campus.demo / Campus@12345
+Bursar: sim-bursar@campus.demo / Campus@12345
+Accountant: sim-accountant@campus.demo / Campus@12345
+Parent: sim-parent@campus.demo / Campus@12345
+Student: sim-student-01@campus.demo / Campus@12345
+
+
+
+
 🔐 COMPLETE LOGIN CREDENTIALS - ALL SIMULATED SCHOOLS
 🏫 SCHOOL 1: Campus Demo School (Seed Data)
 Admin: admin@campus.demo / Campus@12345

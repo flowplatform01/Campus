@@ -1,14 +1,14 @@
 import fetch from 'node-fetch';
 
-const API_KEY = "sk-user-QuXhtp5R_-afL0bJPJYzA-vj-NtU4cD-keuc86oVb0nStQ7NEZB-lmlXuh20BeC88P8sANxPUXdlAn4Ou7KabJyYTSw6y6NukatKQ4Ps1rLySoFiC7jwZMGnDzvjUmxwICk";
-const BASE_URL = "https://api.testsprite.ai";
-
 class CampusAPITester {
   constructor() {
-    this.apiKey = API_KEY;
-    this.baseUrl = BASE_URL;
     this.backendUrl = "http://localhost:3006";
     this.frontendUrl = "http://localhost:5173";
+  }
+
+  makeUniqueEmail(prefix = "test") {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `${prefix}-${suffix}@campus.local`;
   }
 
   async testAPIEndpoint(endpoint, method = 'GET', data = null, expectedStatus = 200) {
@@ -59,8 +59,9 @@ class CampusAPITester {
     console.log('\n🔐 Authentication Tests');
     
     // Test Registration
+    const uniqueEmail = this.makeUniqueEmail("apitest");
     const registerData = {
-      email: "test@campus.com",
+      email: uniqueEmail,
       password: "test123456",
       name: "Test User",
       role: "admin",
@@ -70,7 +71,7 @@ class CampusAPITester {
     
     // Test Login
     const loginData = {
-      email: "test@campus.com",
+      email: uniqueEmail,
       password: "test123456"
     };
     const loginResult = await this.testAPIEndpoint('/api/auth/login', 'POST', loginData, 200);

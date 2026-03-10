@@ -29,6 +29,8 @@ import {
   smsExams,
   smsExamMarks,
   smsExpenses,
+  smsDisciplineRecords,
+  smsStudentTransfers,
   smsStaffAttendanceEntries,
   smsStaffAttendanceSessions,
   smsGradeScales,
@@ -1579,50 +1581,40 @@ router.post("/payments/invoices/bulk", requireAuth, requireTenantAccess, async (
       }
     }
 
-    const created = await db.transaction(async (tx) => {
-      const createdInvoices = [] as any[];
-      for (const studentId of body.studentIds) {
-        const [invoice] = await tx
-          .insert(smsInvoices)
-          .values({
-            schoolId,
-            academicYearId,
-            termId,
-            studentId,
-            dueAt,
-            notes,
-            status: "open",
-            subtotalAmount: 0,
-            totalAmount: 0,
-            createdBy: user.id,
-          })
-          .returning();
-
-        if (!invoice) throw new Error("Failed to create invoice");
-
-        const lineRows = body.lines.map((l) => ({
-          invoiceId: invoice.id,
+    const createdInvoices = [] as any[];
+    for (const studentId of body.studentIds) {
+      const [invoice] = await db
+        .insert(smsInvoices)
+        .values({
           schoolId,
-          feeHeadId: l.feeHeadId ? String(l.feeHeadId).trim() || null : null,
-          description: l.description,
-          amount: l.amount,
-        }));
-        await tx.insert(smsInvoiceLines).values(lineRows);
+          academicYearId,
+          termId,
+          studentId,
+          dueAt,
+          notes,
+          status: "open",
+          subtotalAmount: 0,
+          totalAmount: 0,
+          createdBy: user.id,
+        })
+        .returning();
 
-        // recompute totals inside the same transaction
-        const subtotal = lineRows.reduce((acc, l) => acc + (l.amount ?? 0), 0);
-        const status = "open";
-        const [updated] = await tx
-          .update(smsInvoices)
-          .set({ subtotalAmount: subtotal, totalAmount: subtotal, status })
-          .where(and(eq(smsInvoices.schoolId, schoolId), eq(smsInvoices.id, invoice.id)))
-          .returning();
-        createdInvoices.push(updated ?? invoice);
-      }
-      return createdInvoices;
-    });
+      if (!invoice) throw new Error("Failed to create invoice");
 
-    return res.status(201).json({ count: created.length, invoices: created });
+      const lineRows = body.lines.map((l) => ({
+        invoiceId: invoice.id,
+        schoolId,
+        feeHeadId: l.feeHeadId ? String(l.feeHeadId).trim() || null : null,
+        description: l.description,
+        amount: l.amount,
+      }));
+      await db.insert(smsInvoiceLines).values(lineRows);
+
+      const updated = await recomputeInvoiceTotals(schoolId, invoice.id);
+      createdInvoices.push(updated ?? invoice);
+    }
+
+    return res.status(201).json({ count: createdInvoices.length, invoices: createdInvoices });
   } catch (e) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input", errors: e.errors });
     console.error(e);
@@ -2427,6 +2419,70 @@ router.post("/timetable/publish", requireAuth, requireTenantAccess, async (req: 
     }
     console.error(error);
     return res.status(500).json({ message: "Failed to publish timetable" });
+  }
+});
+
+router.get("/timetable/publications", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const academicYearId = req.query.academicYearId as string | undefined;
+  const termId = req.query.termId as string | undefined;
+  const classId = req.query.classId as string | undefined;
+  const sectionId = req.query.sectionId as string | undefined;
+
+  const rows = await db
+    .select()
+    .from(timetablePublications)
+    .where(
+      and(
+        eq(timetablePublications.schoolId, schoolId),
+        academicYearId ? eq(timetablePublications.academicYearId, academicYearId) : undefined,
+        termId ? eq(timetablePublications.termId, termId) : undefined,
+        classId ? eq(timetablePublications.classId, classId) : undefined,
+        typeof sectionId === "string" ? (sectionId ? eq(timetablePublications.sectionId, sectionId) : isNull(timetablePublications.sectionId)) : undefined
+      )
+    )
+    .orderBy(desc(timetablePublications.updatedAt));
+  return res.json(rows);
+});
+
+router.post("/timetable/unpublish", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  try {
+    const schoolId = requireAdmin(req, res);
+    if (!schoolId) return;
+
+    const body = timetablePublishSchema.parse(req.body);
+    const sectionId = body.sectionId ?? null;
+
+    const [existing] = await db
+      .select()
+      .from(timetablePublications)
+      .where(
+        and(
+          eq(timetablePublications.schoolId, schoolId),
+          eq(timetablePublications.academicYearId, body.academicYearId),
+          eq(timetablePublications.termId, body.termId),
+          eq(timetablePublications.classId, body.classId),
+          sectionId ? eq(timetablePublications.sectionId, sectionId) : isNull(timetablePublications.sectionId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ message: "Timetable publication not found" });
+
+    const [row] = await db
+      .update(timetablePublications)
+      .set({ status: "draft", updatedAt: new Date() })
+      .where(and(eq(timetablePublications.id, existing.id), eq(timetablePublications.schoolId, schoolId)))
+      .returning();
+
+    return res.status(200).json({ message: "Timetable unpublished", timetable: row });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: "Invalid input", errors: error.errors });
+    }
+    console.error(error);
+    return res.status(500).json({ message: "Failed to unpublish timetable" });
   }
 });
 
@@ -3547,6 +3603,107 @@ router.post("/exams/:id/marks", requireAuth, requireTenantAccess, async (req: Au
   return res.json(results);
 });
 
+const transferStudentSchema = z.object({
+  studentId: z.string().min(1),
+  fromAcademicYearId: z.string().min(1),
+  toAcademicYearId: z.string().min(1),
+  fromClassId: z.string().min(1),
+  toClassId: z.string().min(1),
+  fromSectionId: z.string().optional(),
+  toSectionId: z.string().optional(),
+  transferDate: z.string().datetime().optional(),
+  reason: z.string().optional(),
+});
+
+router.post("/students/transfer", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  const schoolId = requireAdmin(req, res);
+  if (!schoolId) return;
+  const body = transferStudentSchema.parse(req.body);
+
+  try {
+    const whereParts: any[] = [
+      eq(studentEnrollments.schoolId, schoolId),
+      eq(studentEnrollments.studentId, body.studentId),
+      eq(studentEnrollments.academicYearId, body.fromAcademicYearId),
+      eq(studentEnrollments.classId, body.fromClassId),
+    ];
+    if (body.fromSectionId) whereParts.push(eq(studentEnrollments.sectionId, body.fromSectionId));
+
+    const [current] = await db
+      .select()
+      .from(studentEnrollments)
+      .where(and(...whereParts))
+      .limit(1);
+    if (!current) return res.status(404).json({ message: "Current enrollment not found" });
+    if (current.status !== "active") {
+      return res.status(409).json({ message: `Current enrollment is not active (${current.status})` });
+    }
+
+    const [existingNext] = await db
+      .select({ id: studentEnrollments.id })
+      .from(studentEnrollments)
+      .where(
+        and(
+          eq(studentEnrollments.schoolId, schoolId),
+          eq(studentEnrollments.studentId, body.studentId),
+          eq(studentEnrollments.academicYearId, body.toAcademicYearId)
+        )
+      )
+      .limit(1);
+    if (existingNext) {
+      return res.status(409).json({ message: "Student already has an enrollment in destination academic year" });
+    }
+
+    const [updatedCurrent] = await db
+      .update(studentEnrollments)
+      .set({ status: "transferred" as any, updatedAt: new Date() } as any)
+      .where(and(eq(studentEnrollments.id, current.id), eq(studentEnrollments.schoolId, schoolId)))
+      .returning();
+    if (!updatedCurrent) {
+      return res.status(500).json({ message: "Failed to update current enrollment" });
+    }
+
+    const [newEnrollment] = await db
+      .insert(studentEnrollments)
+      .values({
+        schoolId,
+        academicYearId: body.toAcademicYearId,
+        termId: null,
+        studentId: body.studentId,
+        classId: body.toClassId,
+        sectionId: body.toSectionId ?? null,
+        status: "active",
+      } as any)
+      .returning();
+    if (!newEnrollment) {
+      return res.status(500).json({ message: "Failed to create destination enrollment" });
+    }
+
+    const [transfer] = await db
+      .insert(smsStudentTransfers)
+      .values({
+        schoolId,
+        studentId: body.studentId,
+        fromAcademicYearId: body.fromAcademicYearId,
+        toAcademicYearId: body.toAcademicYearId,
+        fromClassId: body.fromClassId,
+        toClassId: body.toClassId,
+        fromSectionId: body.fromSectionId ?? null,
+        toSectionId: body.toSectionId ?? null,
+        transferDate: body.transferDate ? new Date(body.transferDate) : new Date(),
+        reason: body.reason ?? null,
+        createdBy: req.user!.id,
+      } as any)
+      .returning();
+
+    return res.status(201).json({ transfer, enrollment: newEnrollment });
+  } catch (e) {
+    console.error(e);
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    return res.status(500).json({ message: "Failed to transfer student", error: process.env.NODE_ENV === "development" ? msg : undefined });
+  }
+});
+
 router.post("/subjects/seed-samples", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
   try {
     const schoolId = requireAdmin(req, res);
@@ -4014,6 +4171,97 @@ router.post("/expenses", requireAuth, requireTenantAccess, async (req: AuthReque
     recordedBy: req.user!.id,
     date: body.date ? new Date(body.date) : new Date(),
   }).returning();
+  return res.status(201).json(row);
+});
+
+const disciplineCreateSchema = z.object({
+  studentId: z.string().min(1),
+  academicYearId: z.string().optional(),
+  termId: z.string().optional(),
+  occurredAt: z.string().datetime().optional(),
+  category: z.string().min(1).optional(),
+  severity: z.enum(["minor", "moderate", "major"]).optional(),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  actionTaken: z.string().optional(),
+});
+
+router.get("/discipline", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  const user = req.user!;
+  const schoolId = user.schoolId ?? null;
+  if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+
+  const studentId = typeof req.query.studentId === "string" ? req.query.studentId : undefined;
+  const academicYearId = typeof req.query.academicYearId === "string" ? req.query.academicYearId : undefined;
+  const termId = typeof req.query.termId === "string" ? req.query.termId : undefined;
+
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "view_student_profiles");
+    if (!ok) return;
+  }
+
+  if (user.role === "student") {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  if (user.role === "parent") {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  const whereParts: any[] = [eq(smsDisciplineRecords.schoolId, schoolId)];
+  if (studentId) whereParts.push(eq(smsDisciplineRecords.studentId, studentId));
+  if (academicYearId) whereParts.push(eq(smsDisciplineRecords.academicYearId, academicYearId));
+  if (termId) whereParts.push(eq(smsDisciplineRecords.termId, termId));
+
+  const rows = await db
+    .select({
+      record: smsDisciplineRecords,
+      student: { id: users.id, name: users.name, studentId: users.studentId },
+    })
+    .from(smsDisciplineRecords)
+    .innerJoin(users, eq(users.id, smsDisciplineRecords.studentId))
+    .where(and(...whereParts))
+    .orderBy(desc(smsDisciplineRecords.occurredAt))
+    .limit(200);
+
+  return res.json(rows);
+});
+
+router.post("/discipline", requireAuth, requireTenantAccess, async (req: AuthRequest, res) => {
+  const user = req.user!;
+  const schoolId = user.schoolId ?? null;
+  if (!schoolId) return res.status(400).json({ message: "User is not linked to a school" });
+  if (user.role !== "admin" && user.role !== "employee") return res.status(403).json({ message: "Forbidden" });
+  if (user.role === "employee") {
+    const ok = await requireEmployeePermission(req, res, "edit_student_profiles");
+    if (!ok) return;
+  }
+
+  const body = disciplineCreateSchema.parse(req.body);
+  const [student] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, body.studentId), eq(users.schoolId, schoolId), eq(users.role, "student")))
+    .limit(1);
+  if (!student) return res.status(400).json({ message: "Invalid studentId" });
+
+  const [row] = await db
+    .insert(smsDisciplineRecords)
+    .values({
+      schoolId,
+      studentId: body.studentId,
+      academicYearId: body.academicYearId ?? null,
+      termId: body.termId ?? null,
+      occurredAt: body.occurredAt ? new Date(body.occurredAt) : new Date(),
+      category: body.category ?? "behavior",
+      severity: body.severity ?? "minor",
+      title: body.title,
+      description: body.description ?? null,
+      actionTaken: body.actionTaken ?? null,
+      recordedBy: user.id,
+    } as any)
+    .returning();
+
   return res.status(201).json(row);
 });
 
