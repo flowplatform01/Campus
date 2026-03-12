@@ -1,5 +1,3 @@
-const fetch = require('node-fetch');
-
 const userData = {
   email: "test@campus.com",
   password: "test123456",
