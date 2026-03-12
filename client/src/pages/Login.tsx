@@ -28,6 +28,28 @@ export default function Login() {
   const googleClientId = useMemo(() => (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string | undefined, []);
   const googleDivRef = useRef<HTMLDivElement | null>(null);
   const [gisReady, setGisReady] = useState(false);
+  const [googleBtnWidth, setGoogleBtnWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = googleDivRef.current;
+    if (!el) return;
+
+    const compute = () => {
+      const next = el.clientWidth;
+      if (next > 0) setGoogleBtnWidth(next);
+    };
+
+    compute();
+
+    if (typeof ResizeObserver === 'undefined') {
+      const t = window.setInterval(compute, 500);
+      return () => window.clearInterval(t);
+    }
+
+    const ro = new ResizeObserver(() => compute());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!googleClientId) return;
@@ -94,9 +116,9 @@ export default function Login() {
     window.google.accounts.id.renderButton(googleDivRef.current, {
       theme: 'outline',
       size: 'large',
-      width: 360,
+      width: googleBtnWidth || 360,
     });
-  }, [gisReady, googleClientId, loginWithGoogle, toast]);
+  }, [gisReady, googleClientId, loginWithGoogle, toast, googleBtnWidth]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,7 +201,7 @@ export default function Login() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 gap-3">
-              <div ref={googleDivRef} />
+              <div ref={googleDivRef} className="w-full" />
             </div>
 
             <div className="relative">

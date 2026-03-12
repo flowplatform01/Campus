@@ -1,4 +1,22 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+function normalizeApiBase(raw: string): string {
+  let base = String(raw || "").trim();
+  if (!base) return "";
+
+  if (base.startsWith("//") && typeof window !== "undefined") {
+    base = `${window.location.protocol}${base}`;
+  }
+
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    if (base.startsWith("http://")) {
+      base = `https://${base.slice("http://".length)}`;
+    }
+  }
+
+  base = base.replace(/\/+$/, "");
+  return base;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE_URL || "");
 
 function getToken(): string | null {
   return localStorage.getItem("campus_access_token");
