@@ -2,8 +2,18 @@ function normalizeApiBase(raw: string): string {
   let base = String(raw || "").trim();
   if (!base) return "";
 
-  if (base.startsWith("//") && typeof window !== "undefined") {
-    base = `${window.location.protocol}${base}`;
+  if (typeof window !== "undefined") {
+    // Protocol-relative URLs: //api.example.com
+    if (base.startsWith("//")) {
+      base = `${window.location.protocol}${base}`;
+    }
+
+    // Bare hostnames: api.example.com (Render users often paste without scheme)
+    // Leave absolute paths ("/api") untouched.
+    const looksLikeHost = !base.startsWith("/") && !/^https?:\/\//i.test(base);
+    if (looksLikeHost) {
+      base = `${window.location.protocol}//${base}`;
+    }
   }
 
   if (typeof window !== "undefined" && window.location.protocol === "https:") {
