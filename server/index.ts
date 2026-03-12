@@ -226,7 +226,11 @@ app.use((req, res, next) => {
 
     // Import setupVite only in development
 
-    const { setupVite } = await import("./vite-development.ts");
+    // NOTE: Keep this import non-static so bundlers (esbuild) don't pull Vite into the
+    // production server bundle. Render does not install devDependencies.
+    const viteDevModulePath = `./vite-${"development"}.ts`;
+    const viteDevModuleUrl = new URL(viteDevModulePath, import.meta.url);
+    const { setupVite } = await import(viteDevModuleUrl.href);
 
     await setupVite(app, server);
 
